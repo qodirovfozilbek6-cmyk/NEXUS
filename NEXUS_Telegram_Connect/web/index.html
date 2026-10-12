@@ -1,0 +1,865 @@
+
+<!DOCTYPE html>
+<html lang="uz">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#050608">
+<meta name="color-scheme" content="dark">
+<title>NEXUS — Cosmic Ranks Premium</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+
+<style>
+:root {
+  color-scheme: dark;
+  --bg:#050608;
+  --panel:rgba(8,12,19,.78);
+  --border:rgba(255,255,255,.14);
+  --text:#f5f7fb;
+  --muted:#a0a8b8;
+  --accent:#75e8a8;
+  --accent2:#d5ffe5;
+  --glow:rgba(90,230,150,.22);
+  --rank-bg:none;
+  --radius:22px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{min-height:100%;background:var(--bg)}
+body{
+  min-height:100vh;min-height:100dvh;overflow-x:hidden;
+  isolation:isolate;position:relative;color:var(--text);
+  font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;
+  background-image:
+    linear-gradient(180deg,rgba(3,5,10,.55),rgba(3,5,10,.91)),
+    var(--rank-bg),
+    radial-gradient(ellipse at top,#12302c,#050608 65%);
+  background-size:cover;background-position:center;background-attachment:fixed;
+  transition:background-image .5s ease;
+}
+button,select{font:inherit}
+button:focus-visible,select:focus-visible{outline:2px solid var(--accent2);outline-offset:3px}
+
+.backdrop{
+  position:fixed;inset:0;z-index:-3;pointer-events:none;
+  background:linear-gradient(180deg,rgba(2,4,8,.16),rgba(2,4,8,.74) 62%,#050608);
+}
+.aurora{
+  position:fixed;inset:-20% -20% auto;height:55vh;z-index:-2;
+  pointer-events:none;filter:blur(70px);opacity:.3;
+  background:linear-gradient(115deg,transparent,var(--glow),transparent);
+  animation:flow 18s ease-in-out infinite alternate;
+}
+#starCanvas{
+  position:fixed;inset:0;width:100%;height:100%;z-index:-1;
+  pointer-events:none;opacity:.65;
+}
+@keyframes flow{to{transform:translate(8%,12%) rotate(8deg)}}
+@keyframes entrance{
+  from{opacity:0;transform:translateY(12px)}
+  to{opacity:1;transform:translateY(0)}
+}
+@keyframes auraFlow{
+  0%{background-position:0% 50%;opacity:.35}
+  100%{background-position:100% 50%;opacity:1}
+}
+@keyframes symbolFloat{
+  0%,100%{transform:translateY(0) rotate(-4deg)}
+  50%{transform:translateY(-12px) rotate(5deg)}
+}
+@keyframes rankPulse{
+  0%,100%{box-shadow:0 0 18px var(--glow)}
+  50%{box-shadow:0 0 38px var(--glow)}
+}
+@keyframes shimmer{
+  0%{background-position:200% center}
+  100%{background-position:-200% center}
+}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.app{
+  width:min(100% - 28px,900px);margin:auto;
+  padding:23px 0 calc(32px + env(safe-area-inset-bottom));
+}
+header{
+  display:flex;justify-content:space-between;align-items:center;
+  gap:12px;margin-bottom:22px;
+}
+.brand{display:flex;align-items:center;gap:11px}
+.logo{
+  width:46px;height:46px;display:grid;place-items:center;
+  border:1px solid color-mix(in srgb,var(--accent),transparent 45%);
+  border-radius:15px;background:rgba(5,8,12,.78);
+  color:var(--accent2);font-size:25px;box-shadow:0 0 25px var(--glow);
+  transition:.4s;
+}
+.brand-name{font-size:22px;font-weight:900;letter-spacing:4px;color:var(--accent2)}
+.brand-sub{font-size:9px;letter-spacing:2px;color:var(--muted);margin-top:4px}
+.connection{
+  display:flex;align-items:center;gap:7px;padding:8px 10px;
+  border:1px solid var(--border);border-radius:99px;
+  background:rgba(0,0,0,.32);font-size:10px;color:var(--accent2);
+  white-space:nowrap;
+}
+.dot{
+  width:6px;height:6px;border-radius:50%;background:var(--accent);
+  box-shadow:0 0 10px var(--accent);
+}
+.card{
+  position:relative;min-width:0;overflow:hidden;margin-bottom:15px;padding:22px;
+  border:1px solid var(--border);border-radius:var(--radius);
+  background:linear-gradient(135deg,rgba(255,255,255,.055),transparent 60%),var(--panel);
+  backdrop-filter:blur(20px) saturate(125%);
+  box-shadow:0 18px 55px rgba(0,0,0,.22),inset 0 1px rgba(255,255,255,.04);
+  transition:border-color .4s,box-shadow .4s,transform .3s;
+}
+.hero{
+  min-height:255px;display:flex;flex-direction:column;justify-content:center;
+  isolation:isolate;
+  border-color:color-mix(in srgb,var(--accent),transparent 55%);
+  background-image:
+    linear-gradient(110deg,rgba(3,5,10,.76),rgba(3,5,10,.28)),
+    var(--rank-bg);
+  background-size:cover;background-position:center;
+  animation:entrance .8s ease both;
+}
+.hero:before{
+  content:"";position:absolute;inset:0;z-index:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse at 85% 20%,var(--glow),transparent 55%),
+    linear-gradient(125deg,transparent 25%,var(--glow),transparent 78%);
+  background-size:180% 180%;
+  animation:auraFlow 9s ease-in-out infinite alternate;
+}
+.hero:after{
+  content:attr(data-symbol);position:absolute;right:16px;top:12px;z-index:0;
+  font-size:clamp(100px,23vw,175px);line-height:1;opacity:.16;
+  pointer-events:none;filter:drop-shadow(0 0 22px var(--glow));
+  animation:symbolFloat 6s ease-in-out infinite;
+}
+.hero>*{position:relative;z-index:1}
+.eyebrow{
+  color:var(--accent);font-size:10px;font-weight:800;
+  letter-spacing:2.2px;text-transform:uppercase;margin-bottom:14px;
+}
+.greeting{
+  font-size:clamp(28px,6vw,43px);line-height:1.15;
+  letter-spacing:-1.2px;overflow-wrap:anywhere;
+}
+.name{
+  background:linear-gradient(100deg,var(--accent2),var(--accent));
+  background-clip:text;-webkit-background-clip:text;color:transparent;
+}
+.subtext{color:var(--muted);font-size:13px;line-height:1.75;margin-top:12px;max-width:560px}
+.owner-badge{
+  display:none;align-items:center;gap:8px;width:fit-content;margin-top:18px;
+  padding:10px 13px;border:1px solid rgba(255,211,112,.65);
+  border-radius:12px;background:linear-gradient(100deg,rgba(210,157,48,.28),rgba(255,238,182,.06));
+  color:#ffe7a3;font-size:10px;font-weight:900;letter-spacing:1.4px;
+  box-shadow:0 0 24px rgba(255,190,72,.15);
+}
+.owner-badge .crown{font-size:18px}
+
+.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-bottom:15px}
+.stat-card{min-height:135px;margin:0;padding:17px}
+.stat-top{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:17px}
+.stat-label{color:var(--muted);font-size:11px}
+.stat-icon{
+  display:grid;place-items:center;width:32px;height:32px;
+  border:1px solid color-mix(in srgb,var(--accent),transparent 70%);
+  border-radius:11px;color:var(--accent2);background:var(--glow);
+}
+.stat-value{font-size:clamp(22px,5vw,32px);font-weight:850;letter-spacing:-.8px;overflow-wrap:anywhere}
+.stat-note{color:var(--muted);font-size:10px;margin-top:7px}
+.section-heading{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:19px}
+.section-title{font-size:15px;font-weight:800}
+.section-tag{
+  flex-shrink:0;padding:6px 9px;border:1px solid color-mix(in srgb,var(--accent),transparent 72%);
+  border-radius:99px;background:rgba(255,255,255,.025);
+  color:var(--accent2);font-size:9px;font-weight:800;letter-spacing:.8px;
+}
+.level-row{display:flex;align-items:center;gap:14px;margin-bottom:22px}
+.level-emblem{
+  width:62px;height:62px;flex-shrink:0;display:grid;place-items:center;
+  border:1px solid color-mix(in srgb,var(--accent),transparent 55%);
+  border-radius:18px;background:var(--glow);font-size:29px;
+  box-shadow:inset 0 1px rgba(255,255,255,.06),0 0 24px var(--glow);
+  animation:rankPulse 4s ease-in-out infinite;
+}
+.level-name{font-size:16px;font-weight:850;line-height:1.4}
+.level-caption{margin-top:5px;color:var(--muted);font-size:12px;line-height:1.6}
+.progress-info{display:flex;justify-content:space-between;gap:10px;color:var(--muted);font-size:11px;margin-bottom:10px}
+.progress-info span:last-child{color:var(--accent2);font-weight:850}
+.progress-track{height:9px;overflow:hidden;border-radius:99px;border:1px solid rgba(255,255,255,.05);background:rgba(255,255,255,.07)}
+.progress-bar{
+  width:0;height:100%;border-radius:inherit;
+  background:linear-gradient(90deg,var(--accent),var(--accent2));
+  box-shadow:0 0 16px var(--glow);transition:width .6s cubic-bezier(.2,.8,.2,1);
+}
+.button{
+  position:relative;width:100%;min-height:50px;padding:14px 16px;
+  display:flex;justify-content:center;align-items:center;gap:8px;overflow:hidden;
+  border:1px solid color-mix(in srgb,var(--accent),transparent 38%);
+  border-radius:14px;color:#07100d;
+  background:linear-gradient(105deg,var(--accent),var(--accent2));
+  box-shadow:0 7px 24px var(--glow);font-size:12px;font-weight:900;
+  letter-spacing:.45px;cursor:pointer;transition:transform .2s,filter .2s,opacity .2s;
+}
+.button:hover{filter:brightness(1.06);transform:translateY(-1px)}
+.button:disabled{opacity:.5;cursor:not-allowed;transform:none;filter:none}
+.button.secondary{
+  margin-top:12px;color:var(--text);border-color:var(--border);
+  background:rgba(255,255,255,.045);box-shadow:none;
+}
+.message{min-height:18px;margin-top:12px;color:var(--muted);font-size:11px;line-height:1.65;text-align:center;overflow-wrap:anywhere}
+.world-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:9px}
+.world-item{padding:14px 6px;text-align:center;border:1px solid var(--border);border-radius:14px;background:rgba(255,255,255,.025)}
+.world-icon{margin-bottom:8px;color:var(--accent);font-size:15px}
+.world-number{font-size:clamp(16px,4vw,23px);font-weight:850;overflow-wrap:anywhere}
+.world-label{margin-top:6px;color:var(--muted);font-size:9px;line-height:1.5}
+.preview-panel{display:none}
+#authPanel{display:none}
+body.app-locked .hero,body.app-locked .stats,body.app-locked main>section.card:not(#authPanel),body.app-locked main>footer{display:none!important}
+body.app-locked #authPanel{display:block}
+.auth-title{font-size:clamp(23px,5vw,31px);font-weight:900;letter-spacing:-.8px;margin:0 0 10px}
+.auth-copy{color:var(--muted);font-size:13px;line-height:1.8;margin:0 0 20px}
+.login-widget{min-height:48px;display:flex;justify-content:center;align-items:center}
+.auth-note{color:var(--muted);font-size:11px;line-height:1.7;text-align:center;overflow-wrap:anywhere}
+
+.preview-panel p{color:var(--muted);font-size:12px;line-height:1.7;margin-bottom:13px}
+.preview-panel select{
+  width:100%;padding:13px;border:1px solid var(--border);
+  border-radius:12px;color:var(--text);background:#10131b;
+}
+.rank-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.rank-option{
+  position:relative;isolation:isolate;display:flex;align-items:center;gap:10px;
+  min-width:0;min-height:78px;padding:11px;overflow:hidden;
+  border:1px solid var(--border);border-radius:14px;
+  background:linear-gradient(100deg,rgba(4,8,14,.89),rgba(4,8,14,.63)),var(--rank-card-image,none);
+  background-size:cover;background-position:center;
+  transition:transform .25s,border-color .25s,box-shadow .25s;
+}
+.rank-option:before{
+  content:"";position:absolute;inset:0;z-index:-1;pointer-events:none;
+  background:linear-gradient(100deg,var(--rank-card-glow,transparent),transparent 85%);
+}
+.rank-option:hover{transform:translateY(-2px);border-color:var(--rank-card-accent,var(--accent))}
+.rank-option.active{
+  border-color:var(--rank-card-accent,var(--accent));
+  box-shadow:0 0 22px var(--rank-card-glow,var(--glow));
+}
+.rank-icon{font-size:24px;filter:drop-shadow(0 0 9px var(--rank-card-accent,var(--accent)))}
+.rank-option strong{display:block;font-size:11px;line-height:1.4}
+.rank-option small{display:block;color:#c1c9d5;font-size:9px;margin-top:4px;line-height:1.45}
+.rank-option.creator-option{
+  grid-column:1/-1;border-color:rgba(242,201,111,.5);
+  --rank-card-accent:#f2c96f;--rank-card-glow:rgba(242,190,75,.23);
+}
+footer{padding:17px 0 6px;color:#82909e;font-size:10px;line-height:2;text-align:center;letter-spacing:.35px}
+footer strong{color:var(--accent2)}
+.toast{
+  position:fixed;z-index:20;left:50%;bottom:calc(20px + env(safe-area-inset-bottom));
+  width:max-content;max-width:calc(100% - 30px);padding:13px 17px;
+  transform:translate(-50%,15px);opacity:0;pointer-events:none;color:#f1fff7;
+  background:rgba(10,16,20,.97);border:1px solid var(--border);
+  border-radius:13px;box-shadow:0 12px 35px rgba(0,0,0,.35);
+  font-size:12px;text-align:center;transition:opacity .25s,transform .25s;
+}
+.toast.show{opacity:1;transform:translate(-50%,0)}
+
+/* 10 ta darajaning rang palitralari */
+body.theme-novice{--accent:#75e8a8;--accent2:#d5ffe5;--glow:rgba(90,230,150,.22)}
+body.theme-explorer{--accent:#59dbe8;--accent2:#d0fbff;--glow:rgba(89,219,232,.23)}
+body.theme-apprentice{--accent:#b18cff;--accent2:#eadfff;--glow:rgba(177,140,255,.25)}
+body.theme-warrior{--accent:#72a9ff;--accent2:#d9e8ff;--glow:rgba(114,169,255,.24)}
+body.theme-elite{--accent:#ff765f;--accent2:#ffe0d8;--glow:rgba(255,95,65,.25)}
+body.theme-master{--accent:#f3c85f;--accent2:#fff0bd;--glow:rgba(243,200,95,.23)}
+body.theme-champion{--accent:#e4edff;--accent2:#fff;--glow:rgba(210,225,255,.23)}
+body.theme-legend{--accent:#5de5d0;--accent2:#d8fff8;--glow:rgba(93,229,208,.25)}
+body.theme-mythic{--accent:#c58aff;--accent2:#f0ddff;--glow:rgba(197,138,255,.27)}
+body.theme-supreme{--accent:#f2c96f;--accent2:#fff0bd;--glow:rgba(242,190,75,.26)}
+body.theme-owner{--accent:#f2c96f;--accent2:#fff0bd;--glow:rgba(242,190,75,.3)}
+
+/* Daraja bo'yicha o'ziga xos atmosfera */
+body.theme-novice .hero{background-image:linear-gradient(110deg,rgba(2,20,12,.72),rgba(2,12,8,.25)),var(--rank-bg)}
+body.theme-novice .level-emblem{border-radius:50% 50% 42% 42%}
+body.theme-explorer .hero{background-image:linear-gradient(110deg,rgba(0,16,32,.76),rgba(0,10,20,.22)),var(--rank-bg)}
+body.theme-explorer .level-emblem{border-radius:50%;box-shadow:0 0 30px rgba(70,220,255,.28)}
+body.theme-apprentice .hero{background-image:radial-gradient(ellipse at 80% 20%,rgba(177,100,255,.25),transparent 55%),linear-gradient(110deg,rgba(20,5,40,.76),rgba(5,3,15,.3)),var(--rank-bg)}
+body.theme-apprentice .level-emblem{border-radius:50%;animation:rankPulse 3s ease-in-out infinite}
+body.theme-warrior .hero{background-image:linear-gradient(115deg,rgba(4,12,38,.78),rgba(10,20,50,.24)),var(--rank-bg)}
+body.theme-warrior .level-emblem{border-radius:12px 24px 12px 24px}
+body.theme-elite .hero{background-image:radial-gradient(ellipse at 85% 100%,rgba(255,70,35,.32),transparent 55%),linear-gradient(110deg,rgba(35,5,5,.8),rgba(15,4,5,.25)),var(--rank-bg)}
+body.theme-elite .level-emblem{border-color:rgba(255,110,75,.65);animation:rankPulse 2.2s ease-in-out infinite}
+body.theme-master .hero{background-image:linear-gradient(110deg,rgba(35,25,3,.8),rgba(15,10,2,.25)),var(--rank-bg)}
+body.theme-master .level-emblem{border-radius:16px;border-color:#f3c85f}
+body.theme-champion .hero{background-image:linear-gradient(110deg,rgba(15,22,40,.73),rgba(10,15,28,.2)),var(--rank-bg)}
+body.theme-champion .level-emblem{border-radius:50%;background:linear-gradient(145deg,rgba(255,255,255,.16),rgba(180,205,255,.05))}
+body.theme-legend .hero{background-image:linear-gradient(110deg,rgba(0,28,30,.77),rgba(0,10,18,.25)),var(--rank-bg)}
+body.theme-legend .level-emblem{border-radius:50%;box-shadow:0 0 32px rgba(93,229,208,.28)}
+body.theme-mythic .hero{background-image:radial-gradient(ellipse at 80% 30%,rgba(197,138,255,.32),transparent 58%),linear-gradient(110deg,rgba(22,4,40,.77),rgba(5,3,18,.22)),var(--rank-bg)}
+body.theme-mythic .level-emblem{border-radius:50%;animation:rankPulse 2.8s ease-in-out infinite}
+body.theme-supreme .hero{background-image:linear-gradient(110deg,rgba(18,13,4,.84),rgba(5,5,7,.25)),var(--rank-bg)}
+body.theme-supreme .level-emblem{border-radius:50%;border-color:rgba(242,201,111,.75);animation:rankPulse 2.8s ease-in-out infinite}
+
+/* Creator Supreme — alohida oltin dizayn */
+body.theme-owner .hero{
+  background-image:linear-gradient(110deg,rgba(15,11,3,.85),rgba(5,5,7,.23)),var(--rank-bg);
+  border-color:rgba(255,209,108,.62);
+  box-shadow:0 18px 60px rgba(0,0,0,.3),inset 0 0 45px rgba(225,169,56,.12);
+}
+body.theme-owner .logo{
+  border-color:rgba(255,220,130,.7);
+  background:linear-gradient(145deg,rgba(219,168,61,.3),rgba(14,15,19,.95));
+  box-shadow:0 0 28px rgba(255,190,72,.22);
+}
+body.theme-owner .owner-badge{display:inline-flex}
+body.theme-owner .button{
+  background:linear-gradient(105deg,#bd8a2e,#fff0bd 48%,#d6a844);
+  background-size:200% auto;border-color:rgba(255,224,151,.65);
+}
+body.theme-owner .button:not(:disabled):hover{animation:shimmer 2s linear infinite}
+body.theme-owner .aurora{opacity:.36;background:linear-gradient(115deg,transparent,#a87925,#fff0bd,transparent)}
+body.theme-owner .level-emblem{border-radius:50%;box-shadow:0 0 32px rgba(255,190,72,.22)}
+body.theme-owner .hero:before{background:radial-gradient(ellipse at 80% 20%,rgba(255,213,112,.22),transparent 60%)}
+
+@media(min-width:700px){
+  .app{padding-top:30px}.hero{min-height:280px}.card{margin-bottom:18px}.stats{gap:16px}
+}
+@media(max-width:430px){
+  .app{width:calc(100% - 20px);padding-top:16px}
+  .brand-name{font-size:19px;letter-spacing:3px}
+  .brand-sub{font-size:8px;letter-spacing:1.3px}
+  .connection{padding:7px 8px;font-size:9px}
+  .card{padding:17px;border-radius:18px;margin-bottom:12px}
+  .hero{min-height:230px}.stats{gap:9px}
+  .stat-card{padding:14px;min-height:128px}
+  .level-emblem{width:54px;height:54px}
+  .rank-list{grid-template-columns:1fr 1fr}
+  .rank-option{padding:9px;gap:7px}
+  .rank-icon{font-size:20px}
+  .rank-option strong{font-size:10px}
+}
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms!important;animation-iteration-count:1!important;
+    transition-duration:.01ms!important;scroll-behavior:auto!important;
+  }
+  #starCanvas{opacity:.3}
+}
+</style>
+</head>
+
+<body>
+<div class="backdrop" aria-hidden="true"></div>
+<div class="aurora" aria-hidden="true"></div>
+<canvas id="starCanvas" aria-hidden="true"></canvas>
+
+<main class="app">
+<header>
+  <div class="brand">
+    <div class="logo">✦</div>
+    <div>
+      <div class="brand-name">NEXUS</div>
+      <div class="brand-sub">COSMIC UNIVERSE</div>
+    </div>
+  </div>
+  <div class="connection"><span class="dot"></span><span id="connectionText">CONNECTING</span></div>
+</header>
+
+<section class="card" id="authPanel">
+  <div class="eyebrow">SECURE ACCOUNT ACCESS</div>
+  <h1 class="auth-title" id="authTitle">Telegram bilan kirish</h1>
+  <p class="auth-copy" id="authDescription">NEXUS hisobing, olmoslaring va darajangni ko‘rish uchun Telegram akkauntingni tasdiqla.</p>
+  <div class="login-widget" id="loginWidget"></div>
+  <div class="message" id="authMessage" role="status" aria-live="polite">Telegram orqali xavfsiz tasdiqlash.</div>
+  <p class="auth-note">Login ma’lumotlari serverda tekshiriladi. Telegram paroling hech qachon so‘ralmaydi.</p>
+</section>
+
+<section class="card hero" id="hero" data-symbol="✧">
+  <div class="eyebrow" id="eyebrow">YOUR COSMIC JOURNEY</div>
+  <h1 class="greeting">Xush kelibsan,<br><span class="name" id="userName">Fozilbek</span></h1>
+  <p class="subtext" id="welcomeText">NEXUS olamidagi sayohatingni boshlagin.</p>
+  <div class="owner-badge" id="ownerBadge"><span class="crown">♛</span><span>FOZILBEK · NEXUS CREATOR</span></div>
+</section>
+
+<section class="stats">
+  <div class="card stat-card">
+    <div class="stat-top"><div class="stat-label">Olmoslar balansi</div><div class="stat-icon">💎</div></div>
+    <div class="stat-value" id="crystals">0</div>
+    <div class="stat-note">Kosmik jamg‘armang</div>
+  </div>
+  <div class="card stat-card">
+    <div class="stat-top"><div class="stat-label">Joriy daraja</div><div class="stat-icon" id="statRankIcon">🌱</div></div>
+    <div class="stat-value" id="levelNumber">01 / 10</div>
+    <div class="stat-note" id="rankText">Novice</div>
+  </div>
+</section>
+
+<section class="card">
+  <div class="section-heading"><h2 class="section-title">Kosmik maqom</h2><span class="section-tag" id="statusTag">RANK SYSTEM</span></div>
+  <div class="level-row">
+    <div class="level-emblem" id="levelIcon">🌱</div>
+    <div><div class="level-name" id="levelName">Novice</div><div class="level-caption" id="levelDescription">NEXUS olamiga ilk qadamlaringni qo‘y.</div></div>
+  </div>
+  <div class="progress-info"><span id="progressLabel">Keyingi darajagacha</span><span id="progressPercent">0%</span></div>
+  <div class="progress-track" id="progressTrack" role="progressbar" aria-label="Daraja rivojlanishi" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"><div class="progress-bar" id="progressBar"></div></div>
+  <div class="message" id="nextRankMessage"></div>
+</section>
+
+<section class="card">
+  <div class="section-heading"><h2 class="section-title">Olmos yig‘ish</h2><span class="section-tag">+10 💎 / 30 MIN</span></div>
+  <p class="subtext" style="margin:0 0 17px">Har 30 daqiqada bir marta 10 ta olmos yig‘. Balansing oshgani sari yangi darajalar ochiladi.</p>
+  <button class="button" id="collectButton" type="button">💎 <span>10 OLMOS YIG‘ISH</span></button>
+  <div class="message" id="collectMessage" aria-live="polite">Keyingi mukofotingni kutib ol.</div>
+</section>
+
+<section class="card">
+  <div class="section-heading"><h2 class="section-title">NEXUS olami</h2><span class="section-tag">LIVE STATS</span></div>
+  <div class="world-grid">
+    <div class="world-item"><div class="world-icon">◉</div><div class="world-number" id="worldUsers">—</div><div class="world-label">Sayohatchilar</div></div>
+    <div class="world-item"><div class="world-icon">💎</div><div class="world-number" id="worldCrystals">—</div><div class="world-label">Jami olmoslar</div></div>
+    <div class="world-item"><div class="world-icon">↗</div><div class="world-number" id="worldActions">—</div><div class="world-label">Faollik</div></div>
+  </div>
+  <button class="button secondary" id="refreshWorldButton" type="button">↻ Statistikani yangilash</button>
+  <div class="message" id="worldMessage" aria-live="polite"></div>
+</section>
+
+<section class="card">
+  <div class="section-heading"><h2 class="section-title">Darajalar xaritasi</h2><span class="section-tag">10 WORLDS + CREATOR</span></div>
+  <div class="rank-list" id="rankList"></div>
+</section>
+
+
+<footer>
+  <div>CRAFTED IN THE COSMOS BY <strong>FOZILBEK</strong></div>
+  <div>10 RANKS · DIAMOND COLLECT · CREATOR SUPREME</div>
+</footer>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+<script>
+"use strict";
+
+const tg=window.Telegram?.WebApp||null;
+if(tg){
+  tg.ready();
+  tg.expand();
+  try{
+    tg.setHeaderColor?.("#050608");
+    tg.setBackgroundColor?.("#050608");
+  }catch(_){}
+}
+
+const API={me:"/api/me",collect:"/api/collect",world:"/api/world"};
+
+/* Internetdagi fon rasmlari. Rasm yuklanmasa, gradient fon qoladi. */
+const LEVELS=[
+ {min:0,name:"Novice",icon:"🌱",theme:"novice",accent:"#75e8a8",light:"#d5ffe5",glow:"rgba(90,230,150,.22)",image:"https://images.unsplash.com/photo-1448375240586-882707db888b?auto=format&fit=crop&w=1800&q=85",description:"NEXUS olamiga ilk qadamlaringni qo‘y.",symbol:"🌿"},
+ {min:100,name:"Explorer",icon:"🧭",theme:"explorer",accent:"#59dbe8",light:"#d0fbff",glow:"rgba(89,219,232,.23)",image:"https://images.unsplash.com/photo-1518837695005-2083093ee35b?auto=format&fit=crop&w=1800&q=85",description:"Yangi hududlarni kashf et va tajriba to‘pla.",symbol:"✧"},
+ {min:300,name:"Apprentice",icon:"🔮",theme:"apprentice",accent:"#b18cff",light:"#eadfff",glow:"rgba(177,140,255,.25)",image:"https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1800&q=85",description:"Sirli olamlar va yangi imkoniyatlar seni kutmoqda.",symbol:"◇"},
+ {min:600,name:"Warrior",icon:"⚔️",theme:"warrior",accent:"#72a9ff",light:"#d9e8ff",glow:"rgba(114,169,255,.24)",image:"https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1800&q=85",description:"Qat’iyat bilan yangi marralarni zabt et.",symbol:"⚔"},
+ {min:1000,name:"Elite",icon:"🔥",theme:"elite",accent:"#ff765f",light:"#ffe0d8",glow:"rgba(255,95,65,.25)",image:"https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1800&q=85",description:"Sening faolliging seni yuqori pog‘onaga olib chiqdi.",symbol:"✦"},
+ {min:1600,name:"Master",icon:"🏆",theme:"master",accent:"#f3c85f",light:"#fff0bd",glow:"rgba(243,200,95,.23)",image:"https://images.unsplash.com/photo-1518709268805-4e9042af9f23?auto=format&fit=crop&w=1800&q=85",description:"Mahorat va sabr bilan imperiyangni qur.",symbol:"♛"},
+ {min:2400,name:"Champion",icon:"🪽",theme:"champion",accent:"#e4edff",light:"#ffffff",glow:"rgba(210,225,255,.23)",image:"https://images.unsplash.com/photo-1464822759023-fed622ff2c3b?auto=format&fit=crop&w=1800&q=85",description:"Samoviy darajalarga ko‘tarilishga tayyorsan.",symbol:"✧"},
+ {min:3400,name:"Legend",icon:"🌌",theme:"legend",accent:"#5de5d0",light:"#d8fff8",glow:"rgba(93,229,208,.25)",image:"https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1800&q=85",description:"NEXUS bo‘ylab noming afsonaga aylanmoqda.",symbol:"☄"},
+ {min:4600,name:"Mythic",icon:"🜲",theme:"mythic",accent:"#c58aff",light:"#f0ddff",glow:"rgba(197,138,255,.27)",image:"https://images.unsplash.com/photo-1462331940025-496dfbfc7564?auto=format&fit=crop&w=1800&q=85",description:"Oddiy chegaralardan yuqoriga ko‘tarilding.",symbol:"✺"},
+ {min:6000,name:"Supreme",icon:"👑",theme:"supreme",accent:"#f2c96f",light:"#fff0bd",glow:"rgba(242,190,75,.26)",image:"https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1800&q=85",description:"NEXUS’ning eng yuqori oddiy darajasi. Creator maqomi bundan alohida.",symbol:"♛"}
+];
+
+const CREATOR={
+ name:"Creator Supreme",icon:"♛",theme:"owner",accent:"#f2c96f",light:"#fff0bd",
+ glow:"rgba(242,190,75,.3)",
+ image:"https://images.unsplash.com/photo-1519681393784-d120267933ba?auto=format&fit=crop&w=1800&q=85",
+ description:"NEXUS asoschisi. Oddiy 10 darajadan alohida maxsus maqom.",symbol:"♛"
+};
+
+const $=id=>document.getElementById(id);
+let isAuthenticated=false;
+let profile={crystals:0,is_owner:false,remaining_seconds:0,first_name:""};
+let toastTimeout=null;
+let countdownInterval=null;
+
+function fmt(value){
+ const n=Number(value??0);
+ return Number.isFinite(n)?Math.max(0,n).toLocaleString("uz-UZ"):"0";
+}
+
+function timeText(seconds){
+ seconds=Math.max(0,Math.floor(seconds));
+ const minutes=Math.floor(seconds/60);
+ const secs=seconds%60;
+ const hours=Math.floor(minutes/60);
+ if(hours)return `${hours} soat ${minutes%60} daq`;
+ if(minutes)return `${minutes} daq ${secs} son`;
+ return `${secs} soniya`;
+}
+
+function showToast(message){
+ const toast=$("toast");
+ toast.textContent=message;
+ toast.classList.add("show");
+ clearTimeout(toastTimeout);
+ toastTimeout=setTimeout(()=>toast.classList.remove("show"),2600);
+}
+
+function getLevel(crystals){
+ let current=LEVELS[0];
+ for(const level of LEVELS){
+  if(crystals>=level.min)current=level;
+ }
+ return current;
+}
+
+function getNext(crystals){
+ return LEVELS.find(level=>crystals<level.min)||null;
+}
+
+function applyTheme(item){
+ document.documentElement.style.setProperty("--accent",item.accent);
+ document.documentElement.style.setProperty("--accent2",item.light);
+ document.documentElement.style.setProperty("--glow",item.glow);
+ document.documentElement.style.setProperty("--rank-bg",`url("${item.image}")`);
+ document.body.className="theme-"+item.theme;
+ $("hero").dataset.symbol=item.symbol||item.icon;
+}
+
+function render(data=profile){
+ profile={...profile,...data};
+
+ const crystals=Math.max(0,Number(profile.crystals)||0);
+ const owner=profile.is_owner===true;
+ const level=getLevel(crystals);
+ const next=getNext(crystals);
+ const current=owner?CREATOR:level;
+
+ applyTheme(current);
+
+ $("userName").textContent=profile.first_name||profile.name||"NEXUS sayohatchisi";
+ $("crystals").textContent=fmt(crystals);
+ $("levelIcon").textContent=current.icon;
+ $("statRankIcon").textContent=current.icon;
+ $("levelName").textContent=owner?"NEXUS YARATUVCHISI · CREATOR":level.name;
+ $("levelDescription").textContent=current.description;
+ $("rankText").textContent=owner?"Creator status":level.name;
+ $("levelNumber").textContent=owner?"CREATOR":String(LEVELS.indexOf(level)+1).padStart(2,"0")+" / 10";
+ $("ownerBadge").style.display=owner?"inline-flex":"none";
+ $("eyebrow").textContent=owner
+  ?"FOUNDER · CREATOR SUPREME"
+  :`LEVEL ${String(LEVELS.indexOf(level)+1).padStart(2,"0")} · ${level.name.toUpperCase()}`;
+ $("welcomeText").textContent=owner
+  ?"O‘zing yaratgan olamga xush kelibsan. Creator dizayni sen uchun alohida."
+  :"NEXUS olamida olmos yig‘, yangi darajalarni och va sayohatingni davom ettir.";
+ $("statusTag").textContent=owner?"FOUNDER ACCESS":"LEVEL PROGRESSION";
+
+ let progress=100;
+ if(!owner&&next){
+  progress=((crystals-level.min)/(next.min-level.min))*100;
+ }
+ progress=Math.max(0,Math.min(100,progress));
+
+ $("progressLabel").textContent=owner
+  ?"Creator maqomi"
+  :next?`${fmt(crystals)} / ${fmt(next.min)} olmos`:`MAX LEVEL · ${fmt(crystals)} olmos`;
+ $("progressPercent").textContent=owner?"MAX":Math.round(progress)+"%";
+ $("progressBar").style.width=progress+"%";
+ $("progressTrack").setAttribute("aria-valuenow",String(Math.round(progress)));
+ $("nextRankMessage").textContent=owner
+  ?"Creator maqomi 10 ta oddiy darajadan alohida."
+  :next?`${fmt(Math.max(0,next.min-crystals))} ta olmosdan keyin ${next.name} ochiladi.`
+  :"Barcha 10 ta daraja ochildi!";
+
+ $("connectionText").textContent=tg?.initData?"LIVE · TELEGRAM":"LIVE · WEB";
+
+ renderRanks(owner?Infinity:crystals);
+ updateCollectButton();
+}
+
+function renderRanks(crystals){
+ const host=$("rankList");
+ host.innerHTML="";
+
+ LEVELS.forEach((level,index)=>{
+  const unlocked=crystals>=level.min;
+  const element=document.createElement("div");
+  element.className="rank-option"+(getLevel(crystals).name===level.name?" active":"");
+  element.style.setProperty("--rank-card-image",`url("${level.image}")`);
+  element.style.setProperty("--rank-card-accent",level.accent);
+  element.style.setProperty("--rank-card-glow",level.glow);
+
+  const icon=document.createElement("span");
+  icon.className="rank-icon";
+  icon.textContent=level.icon;
+
+  const content=document.createElement("div");
+  const title=document.createElement("strong");
+  title.textContent=`${String(index+1).padStart(2,"0")} · ${level.name}`;
+  const details=document.createElement("small");
+  details.textContent=`${fmt(level.min)} 💎 · ${unlocked?"OCHILGAN":"QULFLANGAN"}`;
+
+  content.append(title,details);
+  element.append(icon,content);
+  host.appendChild(element);
+ });
+
+ const creator=document.createElement("div");
+ creator.className="rank-option creator-option"+(profile.is_owner?" active":"");
+ creator.style.setProperty("--rank-card-image",`url("${CREATOR.image}")`);
+
+ const crown=document.createElement("span");
+ crown.className="rank-icon";
+ crown.textContent="♛";
+
+ const creatorContent=document.createElement("div");
+ const creatorTitle=document.createElement("strong");
+ creatorTitle.textContent="CREATOR SUPREME";
+ const creatorDetails=document.createElement("small");
+ creatorDetails.textContent="FAKAT TASDIQLANGAN ASOSCHI UCHUN";
+
+ creatorContent.append(creatorTitle,creatorDetails);
+ creator.append(crown,creatorContent);
+ host.appendChild(creator);
+}
+
+async function apiRequest(url,options={}){
+ const headers={Accept:"application/json",...(options.headers||{})};
+ if(tg?.initData)headers["X-Telegram-Init-Data"]=tg.initData;
+
+ const response=await fetch(url,{
+  ...options,headers,cache:"no-store",credentials:"same-origin"
+ });
+
+ let result={};
+ try{result=await response.json()}catch(_){}
+
+ if(!response.ok){
+  const error=new Error(result.detail||result.message||`Server xatosi (${response.status})`);
+  error.status=response.status;
+  throw error;
+ }
+ return result;
+}
+
+async function loadProfile(){
+ try{
+  const data=await apiRequest(API.me);
+  isAuthenticated=true;
+  profile={...profile,...data};
+  document.body.classList.remove("app-locked");
+  $("authPanel").style.display="none";
+  render(data);
+  $("connectionText").textContent=tg?.initData?"LIVE · TELEGRAM":"LIVE · WEB";
+  $("collectMessage").textContent="Profil serverdan yuklandi.";
+  return true;
+ }catch(error){
+  isAuthenticated=false;
+  document.body.classList.add("app-locked");
+  showAuthGate(error);
+  if(error.status!==401) $("authMessage").textContent="Serverga ulanib bo‘lmadi: "+error.message;
+  $("connectionText").textContent="LOGIN KERAK";
+  return false;
+ }
+}
+
+function showAuthGate(error){
+ const panel=$("authPanel");
+ panel.style.display="block";
+ const widget=$("loginWidget");
+ widget.replaceChildren();
+ if(tg?.initData){
+  $("authTitle").textContent="Telegram Mini App orqali och";
+  $("authDescription").textContent="Telegram tasdiqlashi olinmadi. NEXUS’ni bot ichidagi 🚀 NEXUS tugmasi orqali qayta och.";
+  $("authMessage").textContent=error?.message||"Telegram autentifikatsiyasi kerak.";
+  return;
+ }
+ $("authTitle").textContent="Telegram bilan kirish";
+ $("authDescription").textContent="NEXUS hisobing, olmoslaring va darajangni ko‘rish uchun Telegram akkauntingni tasdiqla.";
+ $("authMessage").textContent="Telegram Login tugmasini bosib akkauntingni tasdiqla.";
+ if(widget.dataset.loaded==="1")return;
+ widget.dataset.loaded="1";
+ const script=document.createElement("script");
+ script.src="https://telegram.org/js/telegram-widget.js?22";
+ script.async=true;
+ script.setAttribute("data-telegram-login","nexus_fozilbek_bot");
+ script.setAttribute("data-size","large");
+ script.setAttribute("data-radius","12");
+ script.setAttribute("data-userpic","false");
+ script.setAttribute("data-request-access","write");
+ script.setAttribute("data-onauth","onTelegramAuth(user)");
+ widget.appendChild(script);
+}
+
+window.onTelegramAuth=async function(user){
+ const buttonArea=$("loginWidget");
+ $("authMessage").textContent="Telegram ma’lumotlari serverda tekshirilmoqda...";
+ try{
+  await apiRequest("/api/auth/telegram-login",{
+   method:"POST",
+   headers:{"Content-Type":"application/json"},
+   body:JSON.stringify(user)
+  });
+  showToast("Telegram akkaunting tasdiqlandi!");
+  const loaded=await loadProfile();
+  if(loaded)await loadWorld();
+ }catch(error){
+  $("authMessage").textContent="Login bajarilmadi: "+error.message+". BotFather’da domen sozlamasini tekshir.";
+  buttonArea.dataset.loaded="";
+ }
+};
+
+function updateCollectButton(){
+ const button=$("collectButton");
+ const remaining=Math.max(0,Number(profile.remaining_seconds||0));
+
+ if(remaining>0){
+  button.disabled=true;
+  button.innerHTML=`◷ <span>${timeText(remaining)} dan keyin</span>`;
+ }else{
+  button.disabled=false;
+  button.innerHTML="💎 <span>10 OLMOS YIG‘ISH</span>";
+ }
+}
+
+async function collectCrystals(){
+ const button=$("collectButton");
+ if(button.disabled)return;
+
+ if(!isAuthenticated){
+  showAuthGate();
+  $("authMessage").textContent="Olmos yig‘ish uchun avval Telegram bilan kir.";
+  return;
+ }
+
+ button.disabled=true;
+ button.innerHTML="◌ <span>TEKSHIRILMOQDA...</span>";
+
+ try{
+  const result=await apiRequest(API.collect,{method:"POST"});
+  const success=result.success===true||result.status==="success";
+
+  if(success){
+   $("collectMessage").textContent=result.message||"Olmoslar muvaffaqiyatli yig‘ildi!";
+   showToast("💎 Olmoslar yig‘ildi!");
+   await loadProfile();
+   await loadWorld();
+  }else{
+   const remaining=Number(result.remaining_seconds||0);
+   if(remaining>0)profile.remaining_seconds=remaining;
+   $("collectMessage").textContent=result.message||result.detail||"Mukofotni hozir olib bo‘lmaydi.";
+  }
+ }catch(error){
+  $("collectMessage").textContent=error.message;
+  showToast("Collect bajarilmadi. Server sozlamalarini tekshir.");
+ }finally{
+  updateCollectButton();
+ }
+}
+
+async function loadWorld(){
+ const button=$("refreshWorldButton");
+
+ if(!isAuthenticated)return;
+
+ button.disabled=true;
+ $("worldMessage").textContent="Statistika yuklanmoqda...";
+
+ try{
+  const data=await apiRequest(API.world);
+  $("worldUsers").textContent=fmt(data.users??data.total_users??data.user_count??0);
+  $("worldCrystals").textContent=fmt(data.crystals??data.total_crystals??data.total_crystal??0);
+  $("worldActions").textContent=fmt(data.actions??data.total_actions??data.action_count??0);
+  $("worldMessage").textContent="Statistika serverdan yangilandi.";
+ }catch(error){
+  $("worldMessage").textContent="Statistika xatosi: "+error.message;
+ }finally{
+  button.disabled=false;
+ }
+}
+
+function initStars(){
+ const canvas=$("starCanvas");
+ const ctx=canvas.getContext("2d");
+ if(!ctx)return;
+
+ let width=0,height=0,stars=[],frame=null,last=0;
+ const reduced=matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+ function resize(){
+  const dpr=Math.min(devicePixelRatio||1,1.5);
+  width=innerWidth;height=innerHeight;
+  canvas.width=width*dpr;canvas.height=height*dpr;
+  canvas.style.width=width+"px";canvas.style.height=height+"px";
+  ctx.setTransform(dpr,0,0,dpr,0,0);
+
+  stars=Array.from({
+   length:Math.min(110,Math.max(35,Math.floor(width*height/11000)))
+  },()=>({
+   x:Math.random()*width,y:Math.random()*height,
+   r:Math.random()*1.2+.2,a:Math.random()*.55+.12,
+   s:Math.random()*.18+.025,p:Math.random()*6.28
+  }));
+ }
+
+ function draw(time){
+  frame=null;
+  if(!reduced&&time-last<42){
+   frame=requestAnimationFrame(draw);
+   return;
+  }
+  last=time;
+  ctx.clearRect(0,0,width,height);
+
+  for(const star of stars){
+   ctx.beginPath();
+   ctx.arc(star.x,star.y,star.r,0,Math.PI*2);
+   ctx.fillStyle=`rgba(225,245,255,${Math.max(.08,star.a+(reduced?0:Math.sin(time*.0007+star.p)*.15))})`;
+   ctx.fill();
+
+   if(!reduced){
+    star.y+=star.s;
+    if(star.y>height+2){star.y=-2;star.x=Math.random()*width;}
+   }
+  }
+  frame=requestAnimationFrame(draw);
+ }
+
+ resize();
+ frame=requestAnimationFrame(draw);
+ addEventListener("resize",resize,{passive:true});
+
+ document.addEventListener("visibilitychange",()=>{
+  if(document.hidden&&frame!==null){
+   cancelAnimationFrame(frame);
+   frame=null;
+  }else if(!document.hidden&&frame===null){
+   last=0;
+   frame=requestAnimationFrame(draw);
+  }
+ });
+}
+
+$("collectButton").addEventListener("click",collectCrystals);
+$("refreshWorldButton").addEventListener("click",loadWorld);
+
+function startCountdown(){
+ clearInterval(countdownInterval);
+ countdownInterval=setInterval(()=>{
+  if(Number(profile.remaining_seconds||0)>0){
+   profile.remaining_seconds=Math.max(0,Number(profile.remaining_seconds)-1);
+  }
+  updateCollectButton();
+ },1000);
+}
+
+async function startApp(){
+ initStars();
+ document.body.classList.add("app-locked");
+ await loadProfile();
+ if(isAuthenticated)await loadWorld();
+ startCountdown();
+}
+
+startApp();
+</script>
+</body>
+</html>
