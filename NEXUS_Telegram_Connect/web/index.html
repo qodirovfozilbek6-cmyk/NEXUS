@@ -224,6 +224,11 @@ header{
 .world-label{margin-top:6px;color:var(--muted);font-size:9px;line-height:1.5}
 .preview-panel{display:none}
 #authPanel{display:none}
+.header-tools{display:flex;align-items:center;gap:10px}
+.logout-button{display:none;align-items:center;justify-content:center;padding:9px 12px;border:1px solid rgba(255,100,100,.35);border-radius:12px;background:rgba(255,75,75,.08);color:#ffaaaa;font:inherit;font-size:11px;font-weight:700;cursor:pointer}
+.logout-button:hover{background:rgba(255,75,75,.18)}
+.logout-button:disabled{opacity:.6;cursor:wait}
+@media(max-width:480px){.header-tools{gap:6px}.logout-button{padding:8px;font-size:10px}}
 body.app-locked .hero,body.app-locked .stats,body.app-locked main>section.card:not(#authPanel),body.app-locked main>footer{display:none!important}
 body.app-locked #authPanel{display:block}
 .auth-title{font-size:clamp(23px,5vw,31px);font-weight:900;letter-spacing:-.8px;margin:0 0 10px}
@@ -370,7 +375,10 @@ body.theme-owner .hero:before{background:radial-gradient(ellipse at 80% 20%,rgba
       <div class="brand-sub">COSMIC UNIVERSE</div>
     </div>
   </div>
-  <div class="connection"><span class="dot"></span><span id="connectionText">CONNECTING</span></div>
+  <div class="header-tools">
+    <button class="logout-button" id="logoutButton" type="button" onclick="logoutNexus()">🚪 Chiqish</button>
+    <div class="connection"><span class="dot"></span><span id="connectionText">CONNECTING</span></div>
+  </div>
 </header>
 
 <section class="card" id="authPanel">
@@ -650,6 +658,7 @@ async function loadProfile(){
  try{
   const data=await apiRequest(API.me);
   isAuthenticated=true;
+  $("logoutButton").style.display=tg?.initData?"none":"inline-flex";
   profile={...profile,...data};
   document.body.classList.remove("app-locked");
   $("authPanel").style.display="none";
@@ -659,6 +668,7 @@ async function loadProfile(){
   return true;
  }catch(error){
   isAuthenticated=false;
+  $("logoutButton").style.display="none";
   document.body.classList.add("app-locked");
   showAuthGate(error);
   if(error.status!==401) $("authMessage").textContent="Serverga ulanib bo‘lmadi: "+error.message;
@@ -712,6 +722,36 @@ window.onTelegramAuth=async function(user){
   buttonArea.dataset.loaded="";
  }
 };
+
+async function logoutNexus(){
+ if(!isAuthenticated)return;
+ const button=$("logoutButton");
+ button.disabled=true;
+ button.textContent="⏳ Chiqilmoqda...";
+ try{
+  const response=await fetch("/api/auth/logout",{
+   method:"POST",
+   credentials:"same-origin",
+   cache:"no-store",
+   headers:{"Accept":"application/json"}
+  });
+  if(!response.ok)throw new Error("Serverdan chiqish amalga oshmadi.");
+  isAuthenticated=false;
+  profile={id:null,first_name:"",username:"",crystals:0,is_owner:false,remaining_seconds:0};
+  document.body.classList.add("app-locked");
+  $("connectionText").textContent="LOGIN KERAK";
+  button.style.display="none";
+  $("authPanel").style.display="block";
+  $("loginWidget").dataset.loaded="";
+  showAuthGate();
+  $("authMessage").textContent="Hisobdan chiqding. Qayta kirish uchun Telegram bilan tasdiqla.";
+  showToast("Hisobdan muvaffaqiyatli chiqding!");
+ }catch(error){
+  showToast("Chiqishda xatolik: "+error.message);
+  button.disabled=false;
+  button.textContent="🚪 Chiqish";
+ }
+}
 
 function updateCollectButton(){
  const button=$("collectButton");
