@@ -1,560 +1,469 @@
 
+import os
 import time
+import logging
+from pathlib import Path
+from urllib.parse import urlsplit, urlunsplit, parse_qsl, urlencode
 
-import aiosqlite
+import asyncpg
+from dotenv import load_dotenv
 
-from nexus.config import settings
+from nexus.config import BASE_DIR
 
+logger = logging.getLogger("NEXUS.DB")
+
+load_dotenv(Path(BASE_DIR) / ".env", override=False)
 
 REWARD_AMOUNT = 10
 COOLDOWN_SECONDS = 30 * 60
 LEADERBOARD_LIMIT = 50
 
-
-SCHEMA = """
-CREATE TABLE IF NOT EXISTS users (
-    telegram_id INTEGER PRIMARY KEY,
-    username TEXT,
-    first_name TEXT NOT NULL DEFAULT '',
-    crystals INTEGER NOT NULL DEFAULT 0 CHECK (crystals >= 0),
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    last_collect_at INTEGER NOT NULL DEFAULT 0
-);
-
-CREATE TABLE IF NOT EXISTS actions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER NOT NULL,
-    action_type TEXT NOT NULL,
-    details TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_actions_user
-ON actions(telegram_id);
-
-CREATE INDEX IF NOT EXISTS idx_users_crystals
-ON users(crystals DESC);
-
-CREATE TABLE IF NOT EXISTS shop_items (
-    item_id TEXT PRIMARY KEY,
-    name TEXT NOT NULL,
-    description TEXT NOT NULL DEFAULT '',
-    price INTEGER NOT NULL CHECK (price >= 0),
-    kind TEXT NOT NULL DEFAULT 'cosmetic',
-    emoji TEXT NOT NULL DEFAULT '✨',
-    active INTEGER NOT NULL DEFAULT 1
-);
-
-CREATE TABLE IF NOT EXISTS inventory (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER NOT NULL,
-    item_id TEXT NOT NULL,
-    purchased_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    UNIQUE (telegram_id, item_id),
-    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id),
-    FOREIGN KEY (item_id) REFERENCES shop_items(item_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_inventory_user
-ON inventory(telegram_id);
-
-CREATE TABLE IF NOT EXISTS crystal_transactions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    telegram_id INTEGER NOT NULL,
-    amount INTEGER NOT NULL,
-    transaction_type TEXT NOT NULL,
-    reference TEXT NOT NULL DEFAULT '',
-    created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (telegram_id) REFERENCES users(telegram_id)
-);
-
-CREATE INDEX IF NOT EXISTS idx_transactions_user
-ON crystal_transactions(telegram_id);
-"""
+_pool = None
 
 
-DEFAULT_SHOP_ITEMS = [
-    (
-        "aura_green",
-        "Emerald Aura",
-        "Profil uchun yashil kosmik aura.",
-        50,
-        "effect",
-        "🌿",
-    ),
-    (
-        "frame_neon",
-        "Neon Frame",
-        "Neon uslubidagi profil ramkasi.",
-        100,
-        "frame",
-        "💠",
-    ),
-    (
-        "avatar_comet",
-        "Comet Avatar",
-        "Kometa mavzusidagi maxsus avatar.",
-        150,
-        "avatar",
-        "☄️",
-    ),
-    (
-        "aura_galaxy",
-        "Galaxy Aura",
-        "Galaktik binafsha effekt.",
-        250,
-        "effect",
-        "🌌",
-    ),
-    (
-        "frame_gold",
-        "Royal Gold",
-        "Oltin rangli premium ramka.",
-        400,
-        "frame",
-        "👑",
-    ),
-]
+def _prepare_database_url(url: str) -> str:
+    if not url:
+        raise RuntimeError("DATABASE_URL topilmadi. .env faylini tekshir.")
+
+    parts = urlsplit(url)
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key.lower() not in {"sslmode", "channel_binding"}
+    ]
+
+    return urlunsplit((
+        parts.scheme,
+        parts.netloc,
+        parts.path,
+        urlencode(query),
+        parts.fragment,
+    ))
+
+
+def _pool_or_raise():
+    if _pool is None or _pool.is_closing():
+        raise RuntimeError(
+            "PostgreSQL pool tayyor emas. Avval await init_db() chaqir."
+        )
+    return _pool
 
 
 async def connect():
-    db = await aiosqlite.connect(
-        settings.database_file(),
-        timeout=30,
-    )
-    db.row_factory = aiosqlite.Row
-    await db.execute("PRAGMA foreign_keys = ON")
-    await db.execute("PRAGMA busy_timeout = 30000")
-    return db
+    return await _pool_or_raise().acquire()
+
+
+async def close_db():
+    global _pool
+
+    if _pool is not None:
+        pool = _pool
+        _pool = None
+        await pool.close()
+        logger.info("PostgreSQL pool yopildi.")
 
 
 async def init_db():
-    db = await connect()
+    global _pool
+
+    if _pool is not None and not _pool.is_closing():
+        return
+
+    load_dotenv(Path(BASE_DIR) / ".env", override=False)
+
+    database_url = os.getenv("DATABASE_URL", "").strip()
+    prepared_url = _prepare_database_url(database_url)
+
+    pool = await asyncpg.create_pool(
+        dsn=prepared_url,
+        ssl="require",
+        min_size=1,
+        max_size=5,
+        command_timeout=30,
+    )
+
     try:
-        await db.execute("PRAGMA journal_mode = WAL")
-        await db.executescript(SCHEMA)
+        async with pool.acquire() as db:
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    telegram_id BIGINT PRIMARY KEY,
+                    username TEXT,
+                    first_name TEXT NOT NULL DEFAULT '',
+                    crystals BIGINT NOT NULL DEFAULT 0,
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    last_collect_at BIGINT NOT NULL DEFAULT 0,
+                    source TEXT NOT NULL DEFAULT 'telegram',
+                    last_seen_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                    last_game_at BIGINT NOT NULL DEFAULT 0
+                );
+            """)
 
-        await db.executemany(
-            """
-            INSERT OR IGNORE INTO shop_items
-                (item_id, name, description, price, kind, emoji)
-            VALUES (?, ?, ?, ?, ?, ?)
-            """,
-            DEFAULT_SHOP_ITEMS,
-        )
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS shop_items (
+                    item_id TEXT PRIMARY KEY,
+                    name TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    price BIGINT NOT NULL DEFAULT 0,
+                    kind TEXT NOT NULL DEFAULT 'item',
+                    emoji TEXT NOT NULL DEFAULT '✨',
+                    active BOOLEAN NOT NULL DEFAULT TRUE
+                );
+            """)
 
-        await db.commit()
-    finally:
-        await db.close()
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS actions (
+                    id BIGSERIAL PRIMARY KEY,
+                    telegram_id BIGINT NOT NULL,
+                    action_type TEXT NOT NULL,
+                    details TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS inventory (
+                    id BIGSERIAL PRIMARY KEY,
+                    telegram_id BIGINT NOT NULL,
+                    item_id TEXT NOT NULL,
+                    purchased_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            await db.execute("""
+                CREATE TABLE IF NOT EXISTS crystal_transactions (
+                    id BIGSERIAL PRIMARY KEY,
+                    telegram_id BIGINT NOT NULL,
+                    amount BIGINT NOT NULL,
+                    transaction_type TEXT NOT NULL,
+                    reference TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+                );
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_actions_telegram_id
+                ON actions (telegram_id);
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_inventory_telegram_id
+                ON inventory (telegram_id);
+            """)
+
+            await db.execute("""
+                CREATE INDEX IF NOT EXISTS idx_crystal_transactions_telegram_id
+                ON crystal_transactions (telegram_id);
+            """)
+
+            defaults = [
+                ("aura_green", "Green Aura", "Yashil aura", 50, "aura", "🟢", True),
+                ("frame_neon", "Neon Frame", "Neon profil ramkasi", 100, "frame", "🖼️", True),
+                ("avatar_comet", "Comet Avatar", "Kometa avatari", 150, "avatar", "☄️", True),
+                ("aura_galaxy", "Galaxy Aura", "Galaktik aura", 250, "aura", "🌌", True),
+                ("frame_gold", "Gold Frame", "Oltin profil ramkasi", 400, "frame", "👑", True),
+            ]
+
+            for item in defaults:
+                await db.execute("""
+                    INSERT INTO shop_items (
+                        item_id, name, description, price, kind, emoji, active
+                    )
+                    VALUES ($1, $2, $3, $4, $5, $6, $7)
+                    ON CONFLICT (item_id) DO NOTHING;
+                """, *item)
+
+        _pool = pool
+        logger.info("PostgreSQL bazasi tayyor.")
+
+    except Exception:
+        await pool.close()
+        logger.exception("PostgreSQL bazasini tayyorlashda xato.")
+        raise
 
 
 async def upsert_user(user: dict):
-    telegram_id = int(user["id"])
+    telegram_id = int(user.get("id") or user.get("telegram_id"))
     username = user.get("username")
-    first_name = user.get("first_name", "")
+    first_name = user.get("first_name") or ""
 
-    db = await connect()
-    try:
-        await db.execute(
-            """
-            INSERT INTO users
-                (telegram_id, username, first_name)
-            VALUES (?, ?, ?)
-            ON CONFLICT(telegram_id) DO UPDATE SET
-                username = excluded.username,
-                first_name = excluded.first_name
-            """,
-            (telegram_id, username, first_name),
-        )
-        await db.commit()
-    finally:
-        await db.close()
+    async with _pool_or_raise().acquire() as db:
+        await db.execute("""
+            INSERT INTO users (
+                telegram_id, username, first_name, crystals,
+                created_at, last_collect_at, source, last_seen_at, last_game_at
+            )
+            VALUES ($1, $2, $3, 0, NOW(), 0, 'telegram', NOW(), 0)
+            ON CONFLICT (telegram_id)
+            DO UPDATE SET
+                username = EXCLUDED.username,
+                first_name = EXCLUDED.first_name,
+                last_seen_at = NOW();
+        """, telegram_id, username, first_name)
 
 
 async def get_user(telegram_id: int):
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            "SELECT * FROM users WHERE telegram_id = ?",
-            (int(telegram_id),),
-        )
-        row = await cursor.fetchone()
-        return dict(row) if row else None
-    finally:
-        await db.close()
+    async with _pool_or_raise().acquire() as db:
+        row = await db.fetchrow("""
+            SELECT telegram_id, username, first_name, crystals,
+                   created_at, last_collect_at, source, last_seen_at, last_game_at
+            FROM users
+            WHERE telegram_id = $1;
+        """, int(telegram_id))
+
+    return dict(row) if row else None
 
 
 async def get_world_stats():
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            """
-            SELECT
-                (SELECT COUNT(*) FROM users) AS players,
-                (SELECT COALESCE(SUM(crystals), 0) FROM users)
-                    AS crystals,
-                (SELECT COUNT(*) FROM actions) AS actions
-            """
-        )
-        return dict(await cursor.fetchone())
-    finally:
-        await db.close()
+    async with _pool_or_raise().acquire() as db:
+        row = await db.fetchrow("""
+            SELECT COUNT(*) AS players,
+                   COALESCE(SUM(crystals), 0) AS crystals
+            FROM users;
+        """)
+        actions = await db.fetchval("SELECT COUNT(*) FROM actions;")
+
+    return {
+        "players": int(row["players"]),
+        "crystals": int(row["crystals"]),
+        "actions": int(actions or 0),
+    }
 
 
 async def get_leaderboard(limit: int = LEADERBOARD_LIMIT):
-    limit = max(1, min(int(limit), LEADERBOARD_LIMIT))
+    limit = max(1, min(int(limit), 100))
 
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            """
-            SELECT
-                telegram_id,
-                username,
-                first_name,
-                crystals,
-                ROW_NUMBER() OVER (
-                    ORDER BY crystals DESC, created_at ASC, telegram_id ASC
-                ) AS position
+    async with _pool_or_raise().acquire() as db:
+        rows = await db.fetch("""
+            SELECT telegram_id, username, first_name, crystals
             FROM users
-            ORDER BY crystals DESC, created_at ASC, telegram_id ASC
-            LIMIT ?
-            """,
-            (limit,),
-        )
-        return [dict(row) for row in await cursor.fetchall()]
-    finally:
-        await db.close()
+            ORDER BY crystals DESC, telegram_id ASC
+            LIMIT $1;
+        """, limit)
+
+    return [dict(row) for row in rows]
 
 
 async def get_player_position(telegram_id: int):
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            """
+    async with _pool_or_raise().acquire() as db:
+        row = await db.fetchrow("""
             SELECT position
             FROM (
-                SELECT
-                    telegram_id,
-                    ROW_NUMBER() OVER (
-                        ORDER BY crystals DESC, created_at ASC,
-                                 telegram_id ASC
-                    ) AS position
+                SELECT telegram_id,
+                       ROW_NUMBER() OVER (
+                           ORDER BY crystals DESC, telegram_id ASC
+                       ) AS position
                 FROM users
-            )
-            WHERE telegram_id = ?
-            """,
-            (int(telegram_id),),
-        )
-        row = await cursor.fetchone()
-        return int(row["position"]) if row else None
-    finally:
-        await db.close()
+            ) AS ranking
+            WHERE telegram_id = $1;
+        """, int(telegram_id))
+
+    return int(row["position"]) if row else None
 
 
-async def get_shop_items(telegram_id: int):
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            """
-            SELECT
-                s.item_id,
-                s.name,
-                s.description,
-                s.price,
-                s.kind,
-                s.emoji,
-                CASE WHEN i.id IS NULL THEN 0 ELSE 1 END AS owned
-            FROM shop_items AS s
-            LEFT JOIN inventory AS i
-                ON i.item_id = s.item_id
-                AND i.telegram_id = ?
-            WHERE s.active = 1
-            ORDER BY s.price ASC, s.name ASC
-            """,
-            (int(telegram_id),),
-        )
-        return [dict(row) for row in await cursor.fetchall()]
-    finally:
-        await db.close()
+async def get_shop_items():
+    async with _pool_or_raise().acquire() as db:
+        rows = await db.fetch("""
+            SELECT item_id AS id, item_id, name, description, price,
+                   kind AS item_type, kind, emoji, active
+            FROM shop_items
+            WHERE active IS TRUE
+            ORDER BY price ASC;
+        """)
+
+    return [dict(row) for row in rows]
 
 
 async def get_inventory(telegram_id: int):
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            """
-            SELECT
-                s.item_id,
-                s.name,
-                s.description,
-                s.kind,
-                s.emoji,
-                i.purchased_at
+    async with _pool_or_raise().acquire() as db:
+        rows = await db.fetch("""
+            SELECT i.id, i.telegram_id, i.item_id, i.purchased_at,
+                   s.name, s.description, s.price,
+                   s.kind AS item_type, s.emoji
             FROM inventory AS i
-            JOIN shop_items AS s ON s.item_id = i.item_id
-            WHERE i.telegram_id = ?
-            ORDER BY i.id DESC
+            LEFT JOIN shop_items AS s ON s.item_id = i.item_id
+            WHERE i.telegram_id = $1
+            ORDER BY i.id DESC;
+        """, int(telegram_id))
+
+    return [dict(row) for row in rows]
+
+
+async def buy_shop_item(
+    telegram_id: int,
+    item_id: str,
+    is_owner: bool = False,
+):
+    pool = _pool_or_raise()
+    telegram_id = int(telegram_id)
+    item_id = str(item_id).strip()
+
+    if not item_id:
+        return {"status": "item_not_found"}
+
+    async with pool.acquire() as db:
+        async with db.transaction():
+            user = await db.fetchrow("""
+                SELECT telegram_id, crystals
+                FROM users
+                WHERE telegram_id = $1
+                FOR UPDATE;
+            """, telegram_id)
+
+            if not user:
+                return {"status": "not_registered"}
+
+            item = await db.fetchrow("""
+                SELECT item_id, name, price, active
+                FROM shop_items
+                WHERE item_id = $1
+                FOR SHARE;
+            """, item_id)
+
+            if not item or not item["active"]:
+                return {"status": "item_not_found"}
+
+            already_owned = await db.fetchval("""
+                SELECT EXISTS (
+                    SELECT 1 FROM inventory
+                    WHERE telegram_id = $1 AND item_id = $2
+                );
+            """, telegram_id, item_id)
+
+            if already_owned:
+                return {"status": "already_owned"}
+
+            balance = int(user["crystals"])
+            price = 0 if is_owner else int(item["price"])
+
+            if balance < price:
+                return {
+                    "status": "insufficient_crystals",
+                    "crystals": balance,
+                    "price": price,
+                }
+
+            if price:
+                await db.execute("""
+                    UPDATE users
+                    SET crystals = crystals - $1
+                    WHERE telegram_id = $2;
+                """, price, telegram_id)
+
+            await db.execute("""
+                INSERT INTO inventory (telegram_id, item_id, purchased_at)
+                VALUES ($1, $2, NOW());
+            """, telegram_id, item_id)
+
+            await db.execute("""
+                INSERT INTO crystal_transactions (
+                    telegram_id, amount, transaction_type, reference, created_at
+                )
+                VALUES ($1, $2, $3, $4, NOW());
             """,
-            (int(telegram_id),),
-        )
-        return [dict(row) for row in await cursor.fetchall()]
-    finally:
-        await db.close()
+                telegram_id,
+                -price,
+                "creator_free_purchase" if is_owner else "purchase",
+                f"shop:{item_id}",
+            )
 
-
-async def buy_shop_item(telegram_id: int, item_id: str):
-    """
-    Narxni klientdan olmaydi.
-    Balans tekshiruvi, pul yechish va xarid yozuvi
-    bitta tranzaksiyada bajariladi.
-    """
-
-    db = await connect()
-
-    try:
-        await db.execute("BEGIN IMMEDIATE")
-
-        cursor = await db.execute(
-            """
-            SELECT item_id, name, price, active
-            FROM shop_items
-            WHERE item_id = ?
-            """,
-            (item_id,),
-        )
-        item = await cursor.fetchone()
-
-        if not item or int(item["active"]) != 1:
-            await db.rollback()
-            return {"status": "item_not_found"}
-
-        cursor = await db.execute(
-            """
-            SELECT crystals
-            FROM users
-            WHERE telegram_id = ?
-            """,
-            (int(telegram_id),),
-        )
-        user = await cursor.fetchone()
-
-        if user is None:
-            await db.rollback()
-            return {"status": "user_not_found"}
-
-        cursor = await db.execute(
-            """
-            SELECT id
-            FROM inventory
-            WHERE telegram_id = ? AND item_id = ?
-            """,
-            (int(telegram_id), item_id),
-        )
-
-        if await cursor.fetchone():
-            await db.rollback()
-            return {"status": "already_owned"}
-
-        price = int(item["price"])
-        balance = int(user["crystals"])
-
-        if balance < price:
-            await db.rollback()
             return {
-                "status": "insufficient_funds",
-                "crystals": balance,
+                "status": "success",
+                "item_id": item_id,
+                "item_name": item["name"],
                 "price": price,
+                "crystals": balance - price,
+                "free": bool(is_owner),
             }
-
-        await db.execute(
-            """
-            UPDATE users
-            SET crystals = crystals - ?
-            WHERE telegram_id = ? AND crystals >= ?
-            """,
-            (price, int(telegram_id), price),
-        )
-
-        cursor = await db.execute(
-            """
-            SELECT crystals
-            FROM users
-            WHERE telegram_id = ?
-            """,
-            (int(telegram_id),),
-        )
-        updated_user = await cursor.fetchone()
-
-        if updated_user is None:
-            await db.rollback()
-            return {"status": "user_not_found"}
-
-        await db.execute(
-            """
-            INSERT INTO inventory (telegram_id, item_id)
-            VALUES (?, ?)
-            """,
-            (int(telegram_id), item_id),
-        )
-
-        await db.execute(
-            """
-            INSERT INTO actions (telegram_id, action_type, details)
-            VALUES (?, 'shop_purchase', ?)
-            """,
-            (int(telegram_id), item_id),
-        )
-
-        await db.execute(
-            """
-            INSERT INTO crystal_transactions
-                (telegram_id, amount, transaction_type, reference)
-            VALUES (?, ?, 'purchase', ?)
-            """,
-            (int(telegram_id), -price, item_id),
-        )
-
-        await db.commit()
-
-        return {
-            "status": "success",
-            "item_id": item_id,
-            "item_name": item["name"],
-            "price": price,
-            "crystals": int(updated_user["crystals"]),
-        }
-
-    except Exception:
-        await db.rollback()
-        raise
-    finally:
-        await db.close()
 
 
 async def get_creator_overview():
-    db = await connect()
-    try:
-        cursor = await db.execute(
-            """
-            SELECT
-                (SELECT COUNT(*) FROM users) AS players,
-                (SELECT COALESCE(SUM(crystals), 0) FROM users)
-                    AS total_crystals,
-                (SELECT COUNT(*) FROM actions) AS total_actions,
-                (SELECT COUNT(*) FROM inventory) AS total_purchases
-            """
-        )
-        stats = dict(await cursor.fetchone())
+    async with _pool_or_raise().acquire() as db:
+        stats = await db.fetchrow("""
+            SELECT COUNT(*) AS players,
+                   COALESCE(SUM(crystals), 0) AS crystals
+            FROM users;
+        """)
+        action_count = await db.fetchval("SELECT COUNT(*) FROM actions;")
 
-        cursor = await db.execute(
-            """
-            SELECT
-                telegram_id,
-                username,
-                first_name,
-                crystals,
-                created_at
+        recent_users = await db.fetch("""
+            SELECT telegram_id, username, first_name, crystals, created_at
             FROM users
-            ORDER BY crystals DESC, created_at ASC
-            LIMIT 10
-            """
-        )
-        stats["top_players"] = [
-            dict(row) for row in await cursor.fetchall()
-        ]
-        return stats
-    finally:
-        await db.close()
+            ORDER BY created_at DESC
+            LIMIT 10;
+        """)
+
+        recent_transactions = await db.fetch("""
+            SELECT telegram_id, amount, transaction_type,
+                   reference AS description, created_at
+            FROM crystal_transactions
+            ORDER BY id DESC
+            LIMIT 10;
+        """)
+
+    return {
+        "players": int(stats["players"]),
+        "crystals": int(stats["crystals"]),
+        "actions": int(action_count or 0),
+        "recent_users": [dict(row) for row in recent_users],
+        "recent_transactions": [dict(row) for row in recent_transactions],
+    }
 
 
 async def collect_crystals(telegram_id: int):
-    """Har 30 daqiqada bir marta serverdan 10 kristall olish."""
+    pool = _pool_or_raise()
+    telegram_id = int(telegram_id)
+    now = int(time.time())
 
-    db = await connect()
+    async with pool.acquire() as db:
+        async with db.transaction():
+            user = await db.fetchrow("""
+                SELECT telegram_id, crystals, last_collect_at
+                FROM users
+                WHERE telegram_id = $1
+                FOR UPDATE;
+            """, telegram_id)
 
-    try:
-        await db.execute("BEGIN IMMEDIATE")
+            if not user:
+                return {"status": "not_registered"}
 
-        cursor = await db.execute(
-            """
-            SELECT crystals, last_collect_at
-            FROM users
-            WHERE telegram_id = ?
+            last_collect = int(user["last_collect_at"] or 0)
+            remaining = max(0, last_collect + COOLDOWN_SECONDS - now)
+
+            if remaining > 0:
+                return {
+                    "status": "cooldown",
+                    "remaining": remaining,
+                    "crystals": int(user["crystals"]),
+                }
+
+            await db.execute("""
+                UPDATE users
+                SET crystals = crystals + $1,
+                    last_collect_at = $2,
+                    last_seen_at = NOW()
+                WHERE telegram_id = $3;
+            """, REWARD_AMOUNT, now, telegram_id)
+
+            await db.execute("""
+                INSERT INTO actions (telegram_id, action_type, details, created_at)
+                VALUES ($1, $2, $3, NOW());
+            """, telegram_id, "collect", f"reward={REWARD_AMOUNT}")
+
+            await db.execute("""
+                INSERT INTO crystal_transactions (
+                    telegram_id, amount, transaction_type, reference, created_at
+                )
+                VALUES ($1, $2, $3, $4, NOW());
             """,
-            (int(telegram_id),),
-        )
-        user = await cursor.fetchone()
-
-        if user is None:
-            await db.rollback()
-            return {"status": "not_registered"}
-
-        now = int(time.time())
-        last_collect_at = int(user["last_collect_at"])
-        next_allowed = last_collect_at + COOLDOWN_SECONDS
-
-        if last_collect_at > 0 and now < next_allowed:
-            remaining = next_allowed - now
-            crystals = int(user["crystals"])
-            await db.rollback()
+                telegram_id,
+                REWARD_AMOUNT,
+                "collect",
+                "crystal_collection_reward",
+            )
 
             return {
-                "status": "cooldown",
-                "remaining": remaining,
-                "crystals": crystals,
+                "status": "success",
+                "reward": REWARD_AMOUNT,
+                "crystals": int(user["crystals"]) + REWARD_AMOUNT,
+                "remaining": COOLDOWN_SECONDS,
             }
-
-        await db.execute(
-            """
-            UPDATE users
-            SET crystals = crystals + ?,
-                last_collect_at = ?
-            WHERE telegram_id = ?
-            """,
-            (REWARD_AMOUNT, now, int(telegram_id)),
-        )
-
-        await db.execute(
-            """
-            INSERT INTO actions
-                (telegram_id, action_type, details)
-            VALUES (?, 'collect', ?)
-            """,
-            (int(telegram_id), f"+{REWARD_AMOUNT} crystals"),
-        )
-
-        await db.execute(
-            """
-            INSERT INTO crystal_transactions
-                (telegram_id, amount, transaction_type, reference)
-            VALUES (?, ?, 'collect', 'cooldown_reward')
-            """,
-            (int(telegram_id), REWARD_AMOUNT),
-        )
-
-        cursor = await db.execute(
-            """
-            SELECT crystals, last_collect_at
-            FROM users
-            WHERE telegram_id = ?
-            """,
-            (int(telegram_id),),
-        )
-        updated_user = await cursor.fetchone()
-
-        await db.commit()
-
-        return {
-            "status": "success",
-            "reward": REWARD_AMOUNT,
-            "crystals": int(updated_user["crystals"]),
-            "last_collect_at": int(updated_user["last_collect_at"]),
-        }
-
-    except Exception:
-        await db.rollback()
-        raise
-    finally:
-        await db.close()

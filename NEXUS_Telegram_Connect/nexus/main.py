@@ -6,19 +6,23 @@ import time
 from contextlib import asynccontextmanager, suppress
 
 from aiogram import Bot, Dispatcher
+from aiogram.types import MenuButtonWebApp, WebAppInfo
 from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from aiogram.types import MenuButtonWebApp, WebAppInfo
 
 from nexus.config import BASE_DIR, settings
 from nexus.db import (
     init_db,
+    close_db,
     upsert_user,
     get_user,
     get_world_stats,
     collect_crystals,
     COOLDOWN_SECONDS,
+    get_shop_items,
+    get_inventory,
+    buy_shop_item,
 )
 from nexus.handlers import router
 from nexus.security import (
@@ -28,442 +32,515 @@ from nexus.security import (
     validate_browser_session,
 )
 
-
-# ==========================================
-# NEXUS CONFIGURATION
-# ==========================================
-
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)s | %(name)s | %(message)s",
-)
-
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("NEXUS")
 
 OWNER_ID = int(os.getenv("NEXUS_OWNER_ID", "0") or "0")
 
-# Mini App va Telegram botdagi darajalar bilan bir xil bo‘lishi kerak.
 LEVELS = [
     (0, "Novice", "🌱"),
     (100, "Explorer", "🧭"),
-    (300, "Apprentice", "🔮"),
+    (300, "Apprentice", "⚡"),
     (600, "Warrior", "⚔️"),
-    (1000, "Elite", "🔥"),
-    (1600, "Master", "🏆"),
-    (2400, "Champion", "🪽"),
+    (1000, "Elite", "🛡️"),
+    (1600, "Master", "💎"),
+    (2400, "Champion", "🏆"),
     (3400, "Legend", "🌌"),
-    (4600, "Mythic", "🜲"),
+    (4600, "Mythic", "🔮"),
     (6000, "Supreme", "👑"),
 ]
 
 
-# ==========================================
-# LEVEL SYSTEM
-# ==========================================
-
 def get_level(crystals: int) -> dict:
-    """Foydalanuvchining darajasi va keyingi bosqichini aniqlaydi."""
+    crystals = max(0, int(crystals))
+    current_index = 0
 
-    current_level = LEVELS[0]
-    next_level = None
-
-    for index, level in enumerate(LEVELS):
-        required, name, icon = level
-
-        if crystals >= required:
-            current_level = level
-
-            if index + 1 < len(LEVELS):
-                next_level = LEVELS[index + 1]
+    for index, (threshold, _, _) in enumerate(LEVELS):
+        if crystals >= threshold:
+            current_index = index
         else:
             break
 
-    required, name, icon = current_level
+    threshold, name, icon = LEVELS[current_index]
 
-    if next_level:
-        next_required, next_name, next_icon = next_level
-        progress = (
-            (crystals - required)
-            / (next_required - required)
-            * 100
-        )
-        progress = max(0, min(100, progress))
+    if current_index + 1 < len(LEVELS):
+        next_threshold, next_name, _ = LEVELS[current_index + 1]
     else:
-        next_required = None
-        next_name = None
-        next_icon = None
+        next_threshold = threshold
+        next_name = name
+
+    if next_threshold > threshold:
+        progress = min(
+            100,
+            int(
+                (crystals - threshold)
+                / (next_threshold - threshold)
+                * 100
+            ),
+        )
+    else:
         progress = 100
 
     return {
-        "level": name,
-        "level_icon": icon,
-        "level_required": required,
+        "level": current_index + 1,
+        "name": name,
+        "icon": icon,
+        "threshold": threshold,
+        "next_threshold": next_threshold,
         "next_level": next_name,
-        "next_level_icon": next_icon,
-        "next_level_required": next_required,
-        "progress": round(progress, 2),
+        "progress": progress,
     }
 
-
-# ==========================================
-# TELEGRAM BOT + FASTAPI LIFESPAN
-# ==========================================
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    logger.info("NEXUS PostgreSQL bazasi ishga tushdi.")
 
     bot = None
+    dispatcher = None
     polling_task = None
 
-    if settings.BOT_TOKEN:
-        bot = Bot(token=settings.BOT_TOKEN)
-
-        # Telegram chat menyusiga Mini App tugmasini qo'shish.
-        if settings.WEBAPP_URL.startswith("https://"):
-            try:
-                await bot.set_chat_menu_button(
-                    menu_button=MenuButtonWebApp(
-                        text="🚀 NEXUS",
-                        web_app=WebAppInfo(url=settings.WEBAPP_URL),
-                    )
-                )
-                logger.info("Telegram Mini App menyu tugmasi sozlandi.")
-            except Exception:
-                logger.exception("Mini App menyu tugmasini sozlab bo'lmadi.")
-
-        dp = Dispatcher()
-        dp.include_router(router)
-
-        app.state.bot = bot
-        app.state.dp = dp
-
-        polling_task = asyncio.create_task(
-            dp.start_polling(bot)
-        )
-
-        logger.info("Telegram bot ishga tushdi.")
-    else:
-        logger.warning(
-            "BOT_TOKEN topilmadi. Telegram bot ishga tushmadi."
-        )
-
-    logger.info("NEXUS server ishga tushdi.")
-
     try:
+        if settings.BOT_TOKEN:
+            bot = Bot(token=settings.BOT_TOKEN)
+            dispatcher = Dispatcher()
+            dispatcher.include_router(router)
+
+            if (
+                settings.WEBAPP_URL
+                and settings.WEBAPP_URL.startswith("https://")
+            ):
+                with suppress(Exception):
+                    await bot.set_chat_menu_button(
+                        menu_button=MenuButtonWebApp(
+                            text="NEXUS",
+                            web_app=WebAppInfo(
+                                url=settings.WEBAPP_URL
+                            ),
+                        )
+                    )
+
+            polling_task = asyncio.create_task(
+                dispatcher.start_polling(bot)
+            )
+            logger.info("NEXUS Telegram bot ishga tushdi.")
+        else:
+            logger.warning(
+                "BOT_TOKEN sozlanmagan. Bot polling ishga tushmadi."
+            )
+
         yield
+
     finally:
         if polling_task:
             polling_task.cancel()
-
-            with suppress(asyncio.CancelledError):
+            with suppress(asyncio.CancelledError, Exception):
                 await polling_task
 
         if bot:
-            await bot.session.close()
+            with suppress(Exception):
+                await bot.session.close()
 
-        logger.info("NEXUS server to'xtatildi.")
+        await close_db()
+        logger.info("NEXUS yopildi.")
 
 
 app = FastAPI(
     title="NEXUS API",
-    description="NEXUS Telegram bot va Mini App API",
     version="1.0.0",
     lifespan=lifespan,
 )
 
 
-# ==========================================
-# BASIC ROUTES
-# ==========================================
-
 @app.get("/")
-async def home():
+async def root():
     return {
-        "project": "NEXUS",
+        "name": "NEXUS",
         "status": "online",
-        "message": "NEXUS server ishlayapti!",
-        "mini_app": "/app/",
-        "health": "/health",
-        "api_docs": "/docs",
+        "app": "/app/",
     }
 
 
 @app.get("/health")
 async def health():
-    return {
-        "status": "ok",
-        "project": "NEXUS",
-        "timestamp": int(time.time()),
-    }
+    return {"status": "ok"}
 
 
-# ==========================================
-# TELEGRAM MINI APP AUTHENTICATION
-# ==========================================
-
-async def authenticated_user(
-    request: Request,
-) -> dict:
+async def authenticated_user(request: Request) -> dict:
     """
-    Telegram Mini App initData ma'lumotlarini tekshiradi.
-    Oddiy brauzer preview rejimi API orqali mukofot ololmaydi.
+    Telegram Mini App initData yoki browser session orqali
+    foydalanuvchini aniqlaydi.
     """
+    init_data = request.headers.get(
+        "X-Telegram-Init-Data", ""
+    ).strip()
 
-    if not settings.BOT_TOKEN:
-        raise HTTPException(
-            status_code=503,
-            detail="Bot token serverda sozlanmagan.",
-        )
-
-    # Telegram Mini App: Telegram imzosini tekshirish.
-    init_data = request.headers.get("X-Telegram-Init-Data", "")
     if init_data:
-        user = validate_init_data(
-            init_data=init_data,
-            bot_token=settings.BOT_TOKEN,
-        )
-        if user:
-            try:
-                telegram_id = int(user["id"])
-            except (KeyError, TypeError, ValueError):
-                user = None
-            else:
-                await upsert_user(user)
-                return {**user, "id": telegram_id}
+        if not settings.BOT_TOKEN:
+            raise HTTPException(
+                status_code=503,
+                detail="Telegram bot sozlanmagan.",
+            )
 
-    # Oddiy brauzer: server imzolagan HttpOnly session cookie.
-    session = validate_browser_session(
-        request.cookies.get("nexus_session", ""),
-        bot_token=settings.BOT_TOKEN,
-    )
-    if session:
-        user = await get_user(int(session["id"]))
-        if user:
-            return {
-                "id": int(user["telegram_id"]),
-                "first_name": user.get("first_name", ""),
-                "username": user.get("username"),
-            }
+        try:
+            telegram_user = validate_init_data(
+                init_data,
+                settings.BOT_TOKEN,
+            )
+        except Exception:
+            telegram_user = None
+
+        if telegram_user:
+            await upsert_user(telegram_user)
+
+            user_id = int(
+                telegram_user.get("id")
+                or telegram_user.get("telegram_id")
+            )
+
+            db_user = await get_user(user_id)
+
+            if db_user:
+                return db_user
+
+    session_token = request.cookies.get("nexus_session")
+
+    if session_token:
+        try:
+            session_user = validate_browser_session(
+                session_token
+            )
+        except Exception:
+            session_user = None
+
+        if session_user:
+            if isinstance(session_user, dict):
+                session_id = (
+                    session_user.get("id")
+                    or session_user.get("telegram_id")
+                )
+            else:
+                session_id = session_user
+
+            if session_id:
+                db_user = await get_user(int(session_id))
+
+                if db_user:
+                    return db_user
 
     raise HTTPException(
         status_code=401,
-        detail="Telegram bilan tizimga kirish kerak.",
+        detail="Avval Telegram orqali tizimga kiring.",
     )
 
 
-# ==========================================
-# TELEGRAM LOGIN WIDGET (ORDINARY BROWSER)
-# ==========================================
-
 @app.post("/api/auth/telegram-login")
-async def telegram_browser_login(request: Request):
+async def telegram_login(request: Request):
     if not settings.BOT_TOKEN:
-        raise HTTPException(status_code=503, detail="BOT_TOKEN serverda sozlanmagan.")
+        raise HTTPException(
+            status_code=503,
+            detail="Telegram bot sozlanmagan.",
+        )
 
     try:
         payload = await request.json()
     except Exception:
-        raise HTTPException(status_code=400, detail="Login ma'lumotlari noto'g'ri.")
+        raise HTTPException(
+            status_code=400,
+            detail="Noto'g'ri JSON ma'lumot.",
+        )
 
     if not isinstance(payload, dict):
-        raise HTTPException(status_code=400, detail="Login ma'lumotlari noto'g'ri.")
+        raise HTTPException(
+            status_code=400,
+            detail="Noto'g'ri so'rov.",
+        )
 
-    user = validate_telegram_login(payload, settings.BOT_TOKEN)
-    if not user:
-        raise HTTPException(status_code=401, detail="Telegram login imzosi noto'g'ri yoki muddati o'tgan.")
+    try:
+        telegram_user = validate_telegram_login(
+            payload,
+            settings.BOT_TOKEN,
+        )
+    except Exception:
+        telegram_user = None
 
-    await upsert_user(user)
-    session_token = create_browser_session(int(user["id"]), settings.BOT_TOKEN)
-    response = JSONResponse({"ok": True})
+    if not telegram_user:
+        raise HTTPException(
+            status_code=401,
+            detail="Telegram login tekshiruvidan o'tmadi.",
+        )
+
+    await upsert_user(telegram_user)
+
+    user_id = int(
+        telegram_user.get("id")
+        or telegram_user.get("telegram_id")
+    )
+
+    session_token = create_browser_session(user_id)
+    is_owner = OWNER_ID != 0 and user_id == OWNER_ID
+
+    response = JSONResponse({
+        "success": True,
+        "status": "success",
+        "user": {
+            "id": user_id,
+            "telegram_id": user_id,
+            "first_name": telegram_user.get("first_name", ""),
+            "username": telegram_user.get("username"),
+            "is_owner": is_owner,
+        },
+    })
+
     response.set_cookie(
         key="nexus_session",
         value=session_token,
-        max_age=7 * 24 * 60 * 60,
         httponly=True,
         secure=True,
         samesite="lax",
+        max_age=7 * 24 * 60 * 60,
         path="/",
     )
+
     return response
 
 
 @app.post("/api/auth/logout")
-async def browser_logout():
-    response = JSONResponse({"ok": True})
-    response.delete_cookie(key="nexus_session", path="/", secure=True, httponly=True, samesite="lax")
+async def logout():
+    response = JSONResponse({
+        "success": True,
+        "status": "success",
+    })
+
+    response.delete_cookie(
+        key="nexus_session",
+        path="/",
+        httponly=True,
+        secure=True,
+        samesite="lax",
+    )
+
     return response
 
 
-# ==========================================
-# PROFILE API
-# ==========================================
-
 @app.get("/api/me")
-async def my_profile(
-    telegram_user: dict = Depends(authenticated_user),
+async def api_me(
+    user: dict = Depends(authenticated_user),
 ):
-    telegram_id = int(telegram_user["id"])
-
-    user = await get_user(telegram_id)
-
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="Foydalanuvchi topilmadi.",
-        )
-
+    telegram_id = int(user["telegram_id"])
     crystals = int(user["crystals"])
-    last_collect_at = int(user["last_collect_at"])
-    now = int(time.time())
+
+    last_collect = user.get("last_collect_at")
+    if hasattr(last_collect, "timestamp"):
+        last_collect = int(last_collect.timestamp())
+    else:
+        last_collect = int(last_collect or 0)
 
     remaining_seconds = max(
         0,
-        last_collect_at + COOLDOWN_SECONDS - now,
+        last_collect + COOLDOWN_SECONDS - int(time.time()),
     )
 
     level_data = get_level(crystals)
-    is_owner = (
-        OWNER_ID != 0 and telegram_id == OWNER_ID
-    )
-
-    if is_owner:
-        rank = "NEXUS YARATUVCHISI"
-        rank_icon = "👑"
-    else:
-        rank = level_data["level"]
-        rank_icon = level_data["level_icon"]
+    is_owner = OWNER_ID != 0 and telegram_id == OWNER_ID
 
     return {
         "id": telegram_id,
-        "first_name": user.get("first_name", ""),
+        "telegram_id": telegram_id,
+        "first_name": user.get("first_name") or "",
         "username": user.get("username"),
         "crystals": crystals,
         "is_owner": is_owner,
-        "rank": rank,
-        "rank_icon": rank_icon,
+        "rank": "Creator Supreme" if is_owner else level_data["name"],
         "level": level_data["level"],
-        "level_icon": level_data["level_icon"],
-        "level_required": level_data["level_required"],
+        "level_name": level_data["name"],
+        "level_icon": level_data["icon"],
+        "threshold": level_data["threshold"],
+        "next_threshold": level_data["next_threshold"],
         "next_level": level_data["next_level"],
-        "next_level_icon": level_data["next_level_icon"],
-        "next_level_required": (
-            level_data["next_level_required"]
-        ),
         "progress": level_data["progress"],
         "remaining_seconds": remaining_seconds,
-        "created_at": user.get("created_at"),
+        "created_at": (
+            user["created_at"].isoformat()
+            if user.get("created_at")
+            and hasattr(user["created_at"], "isoformat")
+            else user.get("created_at")
+        ),
     }
 
-
-# ==========================================
-# COLLECT CRYSTALS API
-# ==========================================
 
 @app.post("/api/collect")
-async def collect(
-    telegram_user: dict = Depends(authenticated_user),
+async def api_collect(
+    user: dict = Depends(authenticated_user),
 ):
-    telegram_id = int(telegram_user["id"])
-
+    telegram_id = int(user["telegram_id"])
     result = await collect_crystals(telegram_id)
+    status = result.get("status")
 
-    if result["status"] == "not_registered":
+    if status == "not_registered":
         raise HTTPException(
             status_code=404,
-            detail="Avval /start orqali botni ishga tushir.",
+            detail="Foydalanuvchi bazada topilmadi.",
         )
 
-    if result["status"] == "cooldown":
+    if status == "cooldown":
         return {
-            "status": "cooldown",
-            "message": "Kristal yig'ish uchun hali vaqt bor.",
-            "remaining_seconds": result["remaining"],
-            "crystals": result["crystals"],
+            **result,
+            "success": False,
         }
 
-    if result["status"] != "success":
-        raise HTTPException(
-            status_code=500,
-            detail="Kristallarni yig'ishda xatolik yuz berdi.",
-        )
+    if status == "success":
+        return {
+            **result,
+            "success": True,
+        }
 
-    user = await get_user(telegram_id)
+    return result
 
-    if not user:
-        raise HTTPException(
-            status_code=404,
-            detail="Foydalanuvchi topilmadi.",
-        )
-
-    crystals = int(user["crystals"])
-    level_data = get_level(crystals)
-
-    is_owner = (
-        OWNER_ID != 0 and telegram_id == OWNER_ID
-    )
-
-    if is_owner:
-        rank = "NEXUS YARATUVCHISI"
-        rank_icon = "👑"
-    else:
-        rank = level_data["level"]
-        rank_icon = level_data["level_icon"]
-
-    return {
-        "status": "success",
-        "message": "Kristallar muvaffaqiyatli yig'ildi!",
-        "reward": result["reward"],
-        "crystals": crystals,
-        "is_owner": is_owner,
-        "rank": rank,
-        "rank_icon": rank_icon,
-        "level": level_data["level"],
-        "level_icon": level_data["level_icon"],
-        "next_level": level_data["next_level"],
-        "next_level_required": (
-            level_data["next_level_required"]
-        ),
-        "progress": level_data["progress"],
-        "remaining_seconds": COOLDOWN_SECONDS,
-    }
-
-
-# ==========================================
-# WORLD STATISTICS API
-# ==========================================
 
 @app.get("/api/world")
-async def world_stats(
-    telegram_user: dict = Depends(authenticated_user),
-):
+async def api_world():
     stats = await get_world_stats()
 
     return {
-        "project": "NEXUS",
-        "players": int(stats["players"]),
-        "total_crystals": int(stats["crystals"]),
-        "actions": int(stats.get("actions", 0)),
+        "players": stats["players"],
+        "total_crystals": stats["crystals"],
+        "actions": stats["actions"],
     }
 
 
-# ==========================================
-# MINI APP STATIC FILES
-# ==========================================
+@app.get("/api/shop")
+async def api_shop(
+    user: dict = Depends(authenticated_user),
+):
+    items = await get_shop_items()
 
-web_directory = BASE_DIR / "web"
+    return {
+        "items": [
+            {
+                **item,
+                "id": str(item.get("id") or item.get("item_id")),
+                "item_id": str(
+                    item.get("item_id") or item.get("id")
+                ),
+                "price": int(item.get("price") or 0),
+            }
+            for item in items
+        ],
+    }
 
-if web_directory.is_dir():
+
+@app.get("/api/inventory")
+async def api_inventory(
+    user: dict = Depends(authenticated_user),
+):
+    telegram_id = int(user["telegram_id"])
+    items = await get_inventory(telegram_id)
+
+    return {
+        "items": [
+            {
+                **item,
+                "id": str(item.get("id") or item.get("item_id")),
+                "item_id": str(
+                    item.get("item_id") or item.get("id")
+                ),
+                "price": int(item.get("price") or 0),
+            }
+            for item in items
+        ],
+    }
+
+
+@app.post("/api/shop/buy")
+async def api_shop_buy(
+    request: Request,
+    user: dict = Depends(authenticated_user),
+):
+    try:
+        payload = await request.json()
+    except Exception:
+        raise HTTPException(
+            status_code=400,
+            detail="Noto'g'ri JSON ma'lumot.",
+        )
+
+    if not isinstance(payload, dict):
+        raise HTTPException(
+            status_code=400,
+            detail="Noto'g'ri so'rov.",
+        )
+
+    item_id = str(payload.get("item_id", "")).strip()
+
+    if not item_id or len(item_id) > 100:
+        raise HTTPException(
+            status_code=400,
+            detail="Buyum ID si noto'g'ri.",
+        )
+
+    telegram_id = int(user["telegram_id"])
+    is_owner = OWNER_ID != 0 and telegram_id == OWNER_ID
+
+    result = await buy_shop_item(
+        telegram_id=telegram_id,
+        item_id=item_id,
+        is_owner=is_owner,
+    )
+
+    status = result.get("status")
+
+    if status == "not_registered":
+        raise HTTPException(
+            status_code=404,
+            detail="Foydalanuvchi ro'yxatdan o'tmagan.",
+        )
+
+    if status == "item_not_found":
+        raise HTTPException(
+            status_code=404,
+            detail="Buyum topilmadi.",
+        )
+
+    if status == "already_owned":
+        return {
+            **result,
+            "success": False,
+            "message": "Bu buyum inventaringizda bor.",
+        }
+
+    if status == "insufficient_crystals":
+        return {
+            **result,
+            "success": False,
+            "message": "Kristall yetarli emas.",
+        }
+
+    if status == "success":
+        return {
+            **result,
+            "success": True,
+        }
+
+    logger.error("Noma'lum xarid javobi: %r", result)
+
+    raise HTTPException(
+        status_code=500,
+        detail="Xaridni bajarishda noma'lum xato.",
+    )
+
+
+web_dir = BASE_DIR / "web"
+
+if web_dir.exists():
     app.mount(
         "/app",
-        StaticFiles(
-            directory=str(web_directory),
-            html=True,
-        ),
-        name="mini_app",
+        StaticFiles(directory=str(web_dir), html=True),
+        name="app",
     )
 else:
     logger.warning(
-        "web papkasi topilmadi: %s",
-        web_directory,
+        "Web papkasi topilmadi: %s",
+        web_dir,
     )

@@ -1,0 +1,10 @@
+.env
+.venv/
+venv/
+__pycache__/
+*.py[cod]
+*.pfx
+CRYSTAL_STRIKE/node_modules/
+data/*.sqlite
+data/*.sqlite3
+data/*.db
