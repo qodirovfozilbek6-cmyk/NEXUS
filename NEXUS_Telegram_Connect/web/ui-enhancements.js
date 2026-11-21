@@ -43,7 +43,7 @@ if(!matchMedia("(pointer:coarse)").matches&&!matchMedia("(prefers-reduced-motion
  pointer.className="f-ui-arrow-pointer";
  pointer.setAttribute("aria-hidden","true");
  pointer.innerHTML='<svg viewBox="0 0 24 32" width="25" height="33" xmlns="http://www.w3.org/2000/svg"><path d="M2 1.5V25l6.1-5.8 4.1 9.1 4.1-1.9-4.2-8.9 8.5-.4L2 1.5Z" fill="currentColor" stroke="#07111f" stroke-width="1.5" stroke-linejoin="round"/></svg>';
- pointer.style.cssText="position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;opacity:0;transform:translate(-2px,-2px);color:var(--ui-accent,var(--accent,var(--gold,var(--green,var(--neon,#69cfff))));filter:drop-shadow(0 2px 3px #0008);transition:opacity .12s";
+ pointer.style.cssText="position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;opacity:0;transform:translate(-2px,-2px);color:var(--ui-accent,var(--accent,var(--gold,var(--green,var(--neon,#69cfff)))));filter:drop-shadow(0 2px 3px #0008);transition:opacity .12s";
  document.body.appendChild(pointer);
  document.documentElement.classList.add("f-ui-custom-cursor");
  const pointerStyle=document.createElement("style");
