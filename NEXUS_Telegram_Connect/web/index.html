@@ -631,39 +631,20 @@ startApp();
 <script id="uzbek-national-orthography">
 (function () {
   "use strict";
-  const uzWords = /\b(va|uchun|bilan|hamda|kirish|chiqish|qo'shish|qo‘shish|qoʻshish|ma'lumot|ma’lumot|maʼlumot|o'qituvchi|o‘qituvchi|oʻqituvchi|o'quvchi|o‘quvchi|oʻquvchi|ta'lim|ta’lim|taʼlim|foydalanuvchi|yordam|sozlamalar|boshqaruv|hisobot|hisobotlar|yuklash|saqlash|o'chirish|o‘chirish|oʻchirish|tahrirlash|qidirish|tanlash|bekor|qayta|bajarish|yuborish|ko'rish|ko‘rish|koʻrish|boshlash|yakunlash|muvaffaqiyatli|xatolik|parol|ism|familiya|fan|dars|mavzu|resurs|kutubxona|sinov|natija|baholash|topshiriq|maktab|oila|ota-ona|o'zgartirish|o‘zgartirish|oʻzgartirish)\b/i;
+  const words = ["foydalanuvchi","boshqaruv","kutubxona","resurs","o‘quvchi","o'quvchi","oʻquvchi","o‘qituvchi","o'qituvchi","oʻqituvchi","ta’lim","ta'lim","taʼlim","ma’lumot","ma'lumot","maʼlumot","qo‘shish","qo'shish","qoʻshish","o‘zgartirish","o'zgartirish","oʻzgartirish","o‘chirish","o'chirish","oʻchirish","ko‘rish","ko'rish","koʻrish","yuklash","saqlash","tahrirlash","qidirish","tanlash","yordam","sozlamalar","hisobot","topshiriq","mavzu","dars","fan","maktab","kirish","chiqish","bajarish","yuborish","boshlash","yakunlash","natija","baholash","oila","ota-ona","o‘quv","o'quv","oʻquv"];
   function convert(value) {
-    if (!uzWords.test(value) && !/[oO gG][\u2018\u2019\u02BB\u02BC'\u0060]/.test(value)) return value;
-    return value
-      .replace(/([oO])[\u2018\u2019\u02BB\u02BC'\u0060´]/g, (_, a) => a === "O" ? "Ö" : "ö")
-      .replace(/([gG])[\u2018\u2019\u02BB\u02BC'\u0060´]/g, (_, a) => a === "G" ? "Ğ" : "ğ")
-      .replace(/sh/g, "ş").replace(/Sh/g, "Ş").replace(/SH/g, "Ş")
-      .replace(/ch/g, "ç").replace(/Ch/g, "Ç").replace(/CH/g, "Ç");
+    const lower=value.toLocaleLowerCase("uz");
+    if(!words.some(word=>lower.includes(word)))return value;
+    return value.replace(/([oO])[\u2018\u2019\u02BB\u02BC'\u0060´]/g,(_,a)=>a==="O"?"Ö":"ö").replace(/([gG])[\u2018\u2019\u02BB\u02BC'\u0060´]/g,(_,a)=>a==="G"?"Ğ":"ğ").replace(/sh/g,"ş").replace(/Sh/g,"Ş").replace(/SH/g,"Ş").replace(/ch/g,"ç").replace(/Ch/g,"Ç").replace(/CH/g,"Ç");
   }
-  function visit(node) {
-    if (node.nodeType === 3) {
-      const p = node.parentElement;
-      if (!p || /^(SCRIPT|STYLE|CODE|PRE|TEXTAREA)$/i.test(p.tagName)) return;
-      const next = convert(node.nodeValue);
-      if (next !== node.nodeValue) node.nodeValue = next;
-      return;
-    }
-    if (node.nodeType !== 1 || /^(SCRIPT|STYLE|CODE|PRE|TEXTAREA)$/i.test(node.tagName)) return;
-    ["placeholder", "title", "aria-label", "alt"].forEach(k => {
-      if (node.hasAttribute(k)) {
-        const v = node.getAttribute(k), n = convert(v);
-        if (v !== n) node.setAttribute(k, n);
-      }
-    });
-    node.childNodes.forEach(visit);
+  function visit(node){
+    if(node.nodeType===3){const p=node.parentElement;if(!p||/^(SCRIPT|STYLE|CODE|PRE|TEXTAREA|NOSCRIPT)$/.test(p.tagName))return;const v=convert(node.nodeValue);if(v!==node.nodeValue)node.nodeValue=v;return;}
+    if(node.nodeType!==1||/^(SCRIPT|STYLE|CODE|PRE|TEXTAREA|NOSCRIPT)$/.test(node.tagName))return;
+    for(const a of ["placeholder","title","aria-label","alt"])if(node.hasAttribute(a)){const v=node.getAttribute(a),n=convert(v);if(n!==v)node.setAttribute(a,n);}
+    for(const c of node.childNodes)visit(c);
   }
-  function run() { visit(document.body); }
-  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run, { once: true }); else run();
-  new MutationObserver(records => records.forEach(r => {
-    r.addedNodes.forEach(visit);
-    if (r.type === "characterData") visit(r.target);
-    if (r.type === "attributes") visit(r.target);
-  })).observe(document.documentElement, {subtree:true, childList:true, characterData:true, attributes:true, attributeFilter:["placeholder","title","aria-label","alt"]});
+  function start(){visit(document.body||document.documentElement);const o=new MutationObserver(rs=>{for(const r of rs){if(r.type==="characterData")visit(r.target);else if(r.type==="attributes")visit(r.target);else for(const n of r.addedNodes)visit(n);}});o.observe(document.documentElement,{subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:["placeholder","title","aria-label","alt"]});}
+  if(document.readyState==="loading")document.addEventListener("DOMContentLoaded",start,{once:true});else start();
 })();
 </script>
 </body>
