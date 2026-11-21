@@ -36,4 +36,25 @@ buildSectionRail();
 const railObserver=new MutationObserver(()=>{if(!document.querySelector(".f-ui-section-rail"))buildSectionRail()});
 railObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["class","hidden"]});
 if(!matchMedia("(prefers-reduced-motion:reduce)").matches&&!matchMedia("(pointer:coarse)").matches){const c=document.createElement("canvas");c.className="f-ui-snow";c.setAttribute("aria-hidden","true");document.body.appendChild(c);const x=c.getContext("2d");let w=0,h=0,flakes=[],raf=0;function size(){const d=Math.min(devicePixelRatio||1,1.5);w=innerWidth;h=innerHeight;c.width=w*d;c.height=h*d;c.style.width=w+"px";c.style.height=h+"px";x.setTransform(d,0,0,d,0,0);flakes=Array.from({length:Math.min(55,Math.max(20,Math.floor(w/27)))},()=>({x:Math.random()*w,y:Math.random()*h,r:.7+Math.random()*1.7,s:.25+Math.random()*.5,a:.2+Math.random()*.45}))}function draw(){x.clearRect(0,0,w,h);flakes.forEach(f=>{x.beginPath();x.fillStyle="rgba(235,244,255,"+f.a+")";x.arc(f.x,f.y,f.r,0,Math.PI*2);x.fill();f.y+=f.s;f.x+=Math.sin(f.y*.008)*.22;if(f.y>h+4){f.y=-4;f.x=Math.random()*w}});raf=requestAnimationFrame(draw)}size();addEventListener("resize",size,{passive:true});document.addEventListener("visibilitychange",()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else if(!raf)draw()});draw()}
+
+/* Theme-colored arrow pointer: keeps the familiar RoboContest-style pointer shape. */
+if(!matchMedia("(pointer:coarse)").matches&&!matchMedia("(prefers-reduced-motion:reduce)").matches){
+ const pointer=document.createElement("div");
+ pointer.className="f-ui-arrow-pointer";
+ pointer.setAttribute("aria-hidden","true");
+ pointer.innerHTML='<svg viewBox="0 0 24 32" width="25" height="33" xmlns="http://www.w3.org/2000/svg"><path d="M2 1.5V25l6.1-5.8 4.1 9.1 4.1-1.9-4.2-8.9 8.5-.4L2 1.5Z" fill="currentColor" stroke="#07111f" stroke-width="1.5" stroke-linejoin="round"/></svg>';
+ pointer.style.cssText="position:fixed;left:0;top:0;z-index:2147483647;pointer-events:none;opacity:0;transform:translate(-2px,-2px);color:var(--ui-accent,var(--accent,var(--gold,var(--green,var(--neon,#69cfff))));filter:drop-shadow(0 2px 3px #0008);transition:opacity .12s";
+ document.body.appendChild(pointer);
+ document.documentElement.classList.add("f-ui-custom-cursor");
+ const pointerStyle=document.createElement("style");
+ pointerStyle.textContent="html.f-ui-custom-cursor,html.f-ui-custom-cursor *{cursor:none!important}.f-ui-arrow-pointer.is-hover svg{transform:scale(1.08);transform-origin:top left}.f-ui-arrow-pointer svg{display:block;transition:transform .12s}";
+ document.head.appendChild(pointerStyle);
+ document.addEventListener("pointermove",e=>{pointer.style.left=e.clientX+"px";pointer.style.top=e.clientY+"px";pointer.style.opacity="1"},{passive:true});
+ document.addEventListener("pointerover",e=>{if(e.target.closest("a,button,[role='button'],input,select,textarea,label"))pointer.classList.add("is-hover");else pointer.classList.remove("is-hover")},{passive:true});
+ document.addEventListener("pointerdown",()=>{pointer.style.transform="translate(-2px,-2px) scale(.9)"});
+ document.addEventListener("pointerup",()=>{pointer.style.transform="translate(-2px,-2px) scale(1)"});
+ document.addEventListener("pointerleave",()=>{pointer.style.opacity="0"});
+ document.addEventListener("pointerenter",()=>{pointer.style.opacity="1"});
+}
+
 })();
