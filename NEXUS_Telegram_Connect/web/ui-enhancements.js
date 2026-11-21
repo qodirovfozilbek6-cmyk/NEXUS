@@ -107,7 +107,7 @@ if(edu){
 }else if(nexus){
  const map=[["hero","Profilim","⌂","ASOSIY"],["nexus-stats","Ko‘rsatkichlar","◈","ASOSIY"],["nexus-rank","Kosmik maqom","♛","RIVOJLANISH"],["nexus-collect","Olmos yig‘ish","◇","RIVOJLANISH"],["nexus-world","NEXUS olami","◎","JAMIYAT"],["nexus-shop","Kosmik do‘kon","▣","JAMIYAT"],["nexus-inventory","Inventarim","▤","JAMIYAT"],["nexus-ranks","Darajalar xaritasi","⌁","RIVOJLANISH"]];
  const cards=[...document.querySelectorAll("main.app > section")];
- cards.forEach(el=>{const h=el.querySelector("h2")?.textContent?.trim();const x=map.find(v=>v[1]===h);if(x)el.id=x[0]});
+ cards.forEach(el=>{if(el.classList.contains("stats")){el.id="nexus-stats";return}const h=el.querySelector("h2")?.textContent?.trim();const x=map.find(v=>v[1]===h);if(x)el.id=x[0]});
  map.forEach(([id,label,icon,group])=>{if(document.getElementById(id))links.push({href:"#"+id,label,icon,group})});
 }
 if(!links.length)return;
