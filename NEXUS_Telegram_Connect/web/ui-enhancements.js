@@ -20,14 +20,20 @@ function render(){const q=input.value.trim().toLocaleLowerCase();const items=[];
 function open(){previousFocus=document.activeElement;overlay.classList.add("is-open");input.value="";render();input.focus()}
 input.addEventListener("input",render);overlay.addEventListener("click",e=>{if(e.target===overlay)close()});document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();open()}if(e.key==="Escape"&&overlay.classList.contains("is-open"))close()});
 const trigger=document.createElement("button");trigger.type="button";trigger.className="f-ui-search-trigger";trigger.setAttribute("aria-label","Qidiruvni ochish");trigger.innerHTML='<span>⌕</span><span class="f-ui-search-label">Qidirish</span><kbd>Ctrl K</kbd>';trigger.addEventListener("click",open);const header=document.querySelector("header,.topbar,.app-header");if(header){(header.querySelector(".header-actions,.header-right,.nav-actions")||header).appendChild(trigger)}else{trigger.style.cssText="position:fixed;right:18px;bottom:18px;z-index:1001";document.body.appendChild(trigger)}
-const contentRoot=document.querySelector("main")||document.body;
-const sectionHeads=Array.from(contentRoot.querySelectorAll("section h2,section h3,main h2,main h3")).filter(h=>h.textContent.trim()&&!h.closest(".f-ui-palette"));
-const uniqueHeads=sectionHeads.filter((h,i,a)=>a.findIndex(x=>x.textContent.trim()===h.textContent.trim())===i).slice(0,9);
-if(!document.querySelector(".sidebar")&&uniqueHeads.length>=3){
- const rail=document.createElement("nav");rail.className="f-ui-section-rail";rail.setAttribute("aria-label","Sahifa bo‘limlari");
+function buildSectionRail(){
+ const contentRoot=document.querySelector("main")||document.body;
+ const sectionHeads=Array.from(contentRoot.querySelectorAll("section h2,section h3,main h2,main h3")).filter(h=>h.textContent.trim()&&!h.closest(".f-ui-palette,[hidden],.hidden")&&getComputedStyle(h).display!=="none");
+ const uniqueHeads=sectionHeads.filter((h,i,a)=>a.findIndex(x=>x.textContent.trim()===h.textContent.trim())===i).slice(0,9);
+ let rail=document.querySelector(".f-ui-section-rail");
+ if(document.querySelector(".sidebar")||uniqueHeads.length<3){if(rail)rail.remove();return}
+ if(!rail){rail=document.createElement("nav");rail.className="f-ui-section-rail";rail.setAttribute("aria-label","Sahifa bo‘limlari");document.body.appendChild(rail)}
+ rail.replaceChildren();
  uniqueHeads.forEach((h,i)=>{if(!h.id)h.id="f-ui-section-"+(i+1);const a=document.createElement("a");a.href="#"+h.id;a.textContent=String(i+1).padStart(2,"0");a.title=h.textContent.trim();rail.appendChild(a)});
- document.body.appendChild(rail);
- const links=Array.from(rail.querySelectorAll("a"));const observer=new IntersectionObserver(entries=>{entries.forEach(entry=>{if(entry.isIntersecting){links.forEach(a=>a.classList.toggle("is-active",a.hash==="#"+entry.target.id))}})},{rootMargin:"-18% 0px -72% 0px"});uniqueHeads.forEach(h=>observer.observe(h));
+ const links=Array.from(rail.querySelectorAll("a"));
+ if(window.IntersectionObserver){const observer=new IntersectionObserver(entries=>entries.forEach(entry=>{if(entry.isIntersecting)links.forEach(a=>a.classList.toggle("is-active",a.hash==="#"+entry.target.id))}),{rootMargin:"-18% 0px -72% 0px"});uniqueHeads.forEach(h=>observer.observe(h))}
 }
+buildSectionRail();
+const railObserver=new MutationObserver(()=>{if(!document.querySelector(".f-ui-section-rail"))buildSectionRail()});
+railObserver.observe(document.body,{subtree:true,childList:true,attributes:true,attributeFilter:["class","hidden"]});
 if(!matchMedia("(prefers-reduced-motion:reduce)").matches&&!matchMedia("(pointer:coarse)").matches){const c=document.createElement("canvas");c.className="f-ui-snow";c.setAttribute("aria-hidden","true");document.body.appendChild(c);const x=c.getContext("2d");let w=0,h=0,flakes=[],raf=0;function size(){const d=Math.min(devicePixelRatio||1,1.5);w=innerWidth;h=innerHeight;c.width=w*d;c.height=h*d;c.style.width=w+"px";c.style.height=h+"px";x.setTransform(d,0,0,d,0,0);flakes=Array.from({length:Math.min(55,Math.max(20,Math.floor(w/27)))},()=>({x:Math.random()*w,y:Math.random()*h,r:.7+Math.random()*1.7,s:.25+Math.random()*.5,a:.2+Math.random()*.45}))}function draw(){x.clearRect(0,0,w,h);flakes.forEach(f=>{x.beginPath();x.fillStyle="rgba(235,244,255,"+f.a+")";x.arc(f.x,f.y,f.r,0,Math.PI*2);x.fill();f.y+=f.s;f.x+=Math.sin(f.y*.008)*.22;if(f.y>h+4){f.y=-4;f.x=Math.random()*w}});raf=requestAnimationFrame(draw)}size();addEventListener("resize",size,{passive:true});document.addEventListener("visibilitychange",()=>{if(document.hidden){cancelAnimationFrame(raf);raf=0}else if(!raf)draw()});draw()}
 })();
