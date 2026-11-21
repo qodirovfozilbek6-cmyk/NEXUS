@@ -57,4 +57,69 @@ if(!matchMedia("(pointer:coarse)").matches&&!matchMedia("(prefers-reduced-motion
  document.addEventListener("pointerenter",()=>{pointer.style.opacity="1"});
 }
 
+
+(function(){
+"use strict";
+const edu=!!document.querySelector("#dashboard"),clim=!!document.querySelector(".module-grid"),nexus=!!document.querySelector("#starCanvas");
+const existing=document.querySelector(".sidebar");
+const css=[
+".f-contest-sidebar{position:fixed;inset:0 auto 0 0;width:258px;z-index:1200;display:flex;flex-direction:column;padding:20px 14px 14px;background:color-mix(in srgb,var(--panel-solid,var(--panel,#09111d)) 94%,#02050a);border-right:1px solid color-mix(in srgb,var(--ui-accent,var(--accent,var(--gold,var(--neon,#63d9ff)))) 24%,transparent);box-shadow:12px 0 42px #0003;backdrop-filter:blur(22px);color:var(--text,#edf3ff);font:13px/1.4 Inter,system-ui,sans-serif;overflow-y:auto;scrollbar-width:thin}",
+".f-contest-brand{display:flex;align-items:center;gap:12px;min-height:48px;padding:2px 9px 18px;border-bottom:1px solid #ffffff16;text-decoration:none;color:inherit}",
+".f-contest-brand-mark{width:38px;height:38px;display:grid;place-items:center;flex:0 0 38px;border:1px solid var(--ui-accent,var(--accent,var(--gold,#69cfff)));border-radius:12px;color:var(--ui-accent,var(--accent,var(--gold,#69cfff)));background:color-mix(in srgb,var(--ui-accent,var(--accent,#69cfff)) 10%,transparent);font-size:20px;font-weight:900}",
+".f-contest-brand strong{display:block;font-size:13px;letter-spacing:1.5px}.f-contest-brand small{display:block;margin-top:4px;color:var(--muted,#8fa0b8);font:9px ui-monospace,monospace;letter-spacing:1.3px}",
+".f-contest-group{margin:22px 0 8px;padding-left:10px;color:var(--muted,#8392a8);font-size:10px;font-weight:750;letter-spacing:1.15px;text-transform:uppercase}",
+".f-contest-link{position:relative;display:flex;align-items:center;gap:12px;min-height:42px;padding:9px 11px;border:1px solid transparent;border-radius:10px;color:var(--muted,#a5b0c2);text-decoration:none!important;font-size:12px;font-weight:600;transition:background .18s,border-color .18s,color .18s,transform .18s}",
+".f-contest-link .f-contest-icon{display:grid;place-items:center;width:20px;flex:0 0 20px;color:var(--ui-accent,var(--accent,var(--gold,#69cfff)));font-size:15px}",
+".f-contest-link:hover{color:var(--text,#fff);background:color-mix(in srgb,var(--ui-accent,var(--accent,#69cfff)) 9%,transparent);border-color:color-mix(in srgb,var(--ui-accent,var(--accent,#69cfff)) 18%,transparent);transform:translateX(2px)}.f-contest-link.is-active{color:var(--ui-accent,var(--accent,var(--gold,#69cfff)));background:color-mix(in srgb,var(--ui-accent,var(--accent,#69cfff)) 13%,transparent);border-color:color-mix(in srgb,var(--ui-accent,var(--accent,#69cfff)) 28%,transparent)}",
+".f-contest-link.is-active:before{content:'';position:absolute;left:-1px;top:8px;bottom:8px;width:2px;border-radius:2px;background:var(--ui-accent,var(--accent,var(--gold,#69cfff)));box-shadow:0 0 12px var(--ui-accent,var(--accent,#69cfff))}",
+".f-contest-foot{margin-top:auto;padding:15px 9px 5px;border-top:1px solid #ffffff16;color:var(--muted,#8fa0b8);font:9px/1.7 ui-monospace,monospace;letter-spacing:.6px}.f-contest-live{display:inline-block;width:7px;height:7px;margin-right:7px;border-radius:50%;background:var(--ui-accent,var(--accent,#69cfff));box-shadow:0 0 10px var(--ui-accent,var(--accent,#69cfff))}",
+".f-contest-toggle{display:none}body.f-contest-has-sidebar{padding-left:258px!important}body.f-contest-has-sidebar .app{width:min(100% - 40px,900px)}",
+"@media(max-width:900px){.f-contest-sidebar{width:250px;transform:translateX(-102%);transition:transform .24s ease}.f-contest-sidebar.is-open{transform:translateX(0)}body.f-contest-has-sidebar{padding-left:0!important}.f-contest-toggle{position:fixed;left:12px;top:12px;z-index:1201;display:grid;place-items:center;width:42px;height:42px;border:1px solid var(--ui-accent,var(--accent,#69cfff));border-radius:11px;background:var(--panel-solid,var(--panel,#101722));color:var(--text,#fff);font-size:19px;box-shadow:0 8px 25px #0006}body.f-contest-has-sidebar .app{padding-top:78px}}",
+"@media(prefers-reduced-motion:reduce){.f-contest-sidebar,.f-contest-link{transition:none}}"
+].join("");
+const st=document.createElement("style");st.id="f-contest-sidebar-style";st.textContent=css;document.head.appendChild(st);
+if(existing){
+ const s=document.createElement("style");
+ s.textContent=".sidebar{width:258px!important;padding:22px 14px!important;gap:0!important;backdrop-filter:blur(22px);box-shadow:12px 0 42px #0003}.sidebar .brand{padding:4px 9px 20px;border-bottom:1px solid #ffffff16}.sidebar .nav-label{margin:23px 0 9px 10px!important;font-size:10px!important;letter-spacing:1.15px!important;text-transform:uppercase}.sidebar .nav-item,.sidebar .nav a{min-height:42px;padding:9px 11px!important;margin:2px 0!important;border:1px solid transparent!important;border-radius:10px!important;font-size:12px!important;font-weight:600!important;transition:all .18s ease}.sidebar .nav-item:hover,.sidebar .nav a:hover{transform:translateX(2px)}.sidebar .nav-item.active,.sidebar .nav a.active{border-color:color-mix(in srgb,var(--accent,var(--gold,#69cfff)) 28%,transparent)!important}.sidebar-bottom,.side-foot{margin-top:auto!important;padding:15px 9px 5px;border-top:1px solid #ffffff16}";
+ document.head.appendChild(s);return;
+}
+let links=[];
+if(edu){
+ const dash=document.querySelector("#dashboard");if(!dash)return;
+ const els=[...dash.querySelectorAll(":scope > .section, :scope > .grid, :scope > .topline")];
+ const icons=["⌂","◉","▦","✦","⌘","▤","♙"];
+ els.forEach((el,i)=>{if(!el.id)el.id="edu-nav-"+i;const h=el.querySelector("h2,h3");links.push({href:"#"+el.id,label:h?.textContent?.trim()||["Bosh sahifa","Telegram","Modullar"][i]||"Bo‘lim",icon:icons[i%icons.length],group:i<3?"ASOSIY":"O‘RGANISH"})});
+ if(document.querySelector("#moduleWorkspace"))links.push({href:"#moduleWorkspace",label:"Modul ish maydoni",icon:"⌘",group:"ISH MAYDONI"});
+}else if(clim){
+ links=[
+ {href:"index.html",label:"Bosh sahifa",icon:"⌂",group:"PLATFORMA"},
+ {href:"#platform",label:"Ekotizim modullari",icon:"▦",group:"PLATFORMA"},
+ {href:"pages/monitoring.html",label:"Iqlim monitoringi",icon:"◉",group:"TAHLIL"},
+ {href:"pages/map.html",label:"Ekologik xarita",icon:"◎",group:"TAHLIL"},
+ {href:"pages/eco.html",label:"ECO RISK",icon:"⚑",group:"TAHLIL"},
+ {href:"pages/ai.html",label:"Aqlli tahlil",icon:"⌘",group:"TAHLIL"},
+ {href:"pages/carbon.html",label:"Uglerod izi",icon:"⌁",group:"TAHLIL"},
+ {href:"pages/academy.html",label:"Ekologik ta’lim",icon:"▤",group:"JAMIYAT"},
+ {href:"pages/action.html",label:"Ekologik harakat",icon:"✳",group:"JAMIYAT"},
+ {href:"pages/insight.html",label:"Tadqiqotlar",icon:"⌕",group:"JAMIYAT"},
+ {href:"pages/control.html",label:"Boshqaruv markazi",icon:"⬡",group:"PLATFORMA"}
+ ];
+}else if(nexus){
+ const map=[["hero","Profilim","⌂","ASOSIY"],["nexus-stats","Ko‘rsatkichlar","◈","ASOSIY"],["nexus-rank","Kosmik maqom","♛","RIVOJLANISH"],["nexus-collect","Olmos yig‘ish","◇","RIVOJLANISH"],["nexus-world","NEXUS olami","◎","JAMIYAT"],["nexus-shop","Kosmik do‘kon","▣","JAMIYAT"],["nexus-inventory","Inventarim","▤","JAMIYAT"],["nexus-ranks","Darajalar xaritasi","⌁","RIVOJLANISH"]];
+ const cards=[...document.querySelectorAll("main.app > section")];
+ cards.forEach(el=>{const h=el.querySelector("h2")?.textContent?.trim();const x=map.find(v=>v[1]===h);if(x)el.id=x[0]});
+ map.forEach(([id,label,icon,group])=>{if(document.getElementById(id))links.push({href:"#"+id,label,icon,group})});
+}
+if(!links.length)return;
+const side=document.createElement("aside");side.className="f-contest-sidebar";side.setAttribute("aria-label","Asosiy navigatsiya");
+const brand=document.createElement("a");brand.className="f-contest-brand";brand.href=edu?"#dashboard":clim?"index.html":"#hero";
+brand.innerHTML='<span class="f-contest-brand-mark">'+(edu?"E":clim?"✳":"✦")+'</span><span><strong>'+(edu?"EDUCORE":clim?"CLIMORA":"NEXUS")+'</strong><small>'+(edu?"LEARN · EXPLORE · ACHIEVE":clim?"CLIMATE INTELLIGENCE":"COSMIC UNIVERSE")+'</small></span>';side.appendChild(brand);
+let last="";
+links.forEach(item=>{if(item.group!==last){const g=document.createElement("div");g.className="f-contest-group";g.textContent=item.group;side.appendChild(g);last=item.group}const a=document.createElement("a");a.className="f-contest-link";a.href=item.href;const ic=document.createElement("span");ic.className="f-contest-icon";ic.textContent=item.icon;const label=document.createElement("span");label.textContent=item.label;a.append(ic,label);a.addEventListener("click",()=>{side.querySelectorAll(".f-contest-link").forEach(x=>x.classList.remove("is-active"));a.classList.add("is-active");if(innerWidth<=900)side.classList.remove("is-open")});side.appendChild(a)});
+const foot=document.createElement("div");foot.className="f-contest-foot";foot.innerHTML='<span class="f-contest-live"></span> TIZIM FAOL<br>ROBOCONTEST-INSPIRED UI';side.appendChild(foot);document.body.appendChild(side);document.body.classList.add("f-contest-has-sidebar");
+const toggle=document.createElement("button");toggle.type="button";toggle.className="f-contest-toggle";toggle.setAttribute("aria-label","Yon panelni ochish");toggle.textContent="☰";toggle.addEventListener("click",()=>side.classList.toggle("is-open"));document.body.appendChild(toggle);
+if(edu){const update=()=>{const visible=!document.querySelector("#dashboard")?.classList.contains("hidden");side.style.display=visible?"flex":"none";toggle.style.display=visible?"grid":"none"};update();new MutationObserver(update).observe(document.querySelector("#dashboard"),{attributes:true,attributeFilter:["class"]})}
+if(nexus){const auth=document.querySelector("#authPanel");if(auth){const update=()=>{const visible=getComputedStyle(auth).display==="none";side.style.display=visible?"flex":"none";toggle.style.display=visible?"grid":"none"};new MutationObserver(update).observe(auth,{attributes:true,attributeFilter:["style","class"]});setTimeout(update,250)}}
+})();
+
 })();
